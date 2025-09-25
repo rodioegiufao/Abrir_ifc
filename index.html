@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Meu Visualizador IFC</title>
+  <style>
+    body { margin: 0; }
+    #viewer-container {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+    input[type="file"] {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="viewer-container"></div>
+  <input type="file" id="file-input">
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
