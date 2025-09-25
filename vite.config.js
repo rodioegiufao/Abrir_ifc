@@ -2,15 +2,20 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   server: {
-    port: 3000
+    port: 3000,
+    strictPort: true
   },
   build: {
     target: 'esnext',
+    outDir: 'dist',
+    assetsDir: 'assets',
     rollupOptions: {
-      external: []
+      input: {
+        main: './index.html'
+      }
     }
   },
-  optimizeDeps: {
-    exclude: ['web-ifc-viewer']
+  preview: {
+    port: 3000
   }
 });
