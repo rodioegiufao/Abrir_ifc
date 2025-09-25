@@ -2,9 +2,10 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Meu Visualizador IFC</title>
   <style>
-    body { margin: 0; }
+    body { margin: 0; padding: 0; }
     #viewer-container {
       width: 100vw;
       height: 100vh;
@@ -15,12 +16,18 @@
       top: 10px;
       left: 10px;
       z-index: 10;
+      padding: 10px;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
     }
   </style>
 </head>
 <body>
   <div id="viewer-container"></div>
-  <input type="file" id="file-input">
-  <script type="module" src="./main.js"></script>
+  <input type="file" id="file-input" accept=".ifc">
+  
+  <!-- Use caminho relativo explícito -->
+  <script type="module" src="/main.js"></script>
 </body>
 </html>
