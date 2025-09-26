@@ -1,33 +1,43 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Meu Visualizador IFC</title>
-  <style>
-    body { margin: 0; padding: 0; }
-    #viewer-container {
-      width: 100vw;
-      height: 100vh;
-      position: relative;
-    }
-    input[type="file"] {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 10;
-      padding: 10px;
-      background: white;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-  </style>
+    <title>Visualizador IFC Simples</title>
+    <style>
+        body { margin: 0; }
+        #viewer-container { width: 100vw; height: 100vh; }
+        #file-input {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+        }
+    </style>
 </head>
 <body>
-  <div id="viewer-container"></div>
-  <input type="file" id="file-input" accept=".ifc">
-  
-  <!-- Use caminho relativo explícito -->
-  <script type="module" src="/main.js"></script>
+    <input type="file" id="file-input" accept=".ifc">
+    <div id="viewer-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/web-ifc-viewer@1.0.208/dist/web-ifc-viewer.js"></script>
+    <script>
+        // Configuração simples
+        const container = document.getElementById('viewer-container');
+        const input = document.getElementById('file-input');
+        
+        const viewer = new IfcViewerAPI({ container });
+        viewer.axes.setAxes();
+        viewer.grid.setGrid();
+
+        // Carregar arquivo IFC
+        input.onchange = async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const url = URL.createObjectURL(file);
+            await viewer.IFC.loadIfcUrl(url);
+        };
+
+        // Selecionar elemento com duplo clique
+        window.ondblclick = () => viewer.pickIfcItem();
+    </script>
 </body>
 </html>
