@@ -34,10 +34,12 @@ input.addEventListener("change",
     false
 );
 
+// index.js (CORRIGIDO)
 async function loadIfc(url) {
     await viewer.dispose();
     viewer = CreateViewer(container);
-    await viewer.IFC.setWasmPath("https://unpkg.com/web-ifc@0.0.45/");
+    // ⚠️ ALTERE ESTA LINHA PARA O SEGUINTE:
+    await viewer.IFC.setWasmPath("/wasm/"); 
     const model = await viewer.IFC.loadIfcUrl(url);
     viewer.shadowDropper.renderShadow(model.modelID);
 }
