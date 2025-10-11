@@ -31,29 +31,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // 🔸 Oculta o modelo base (modelo original completo)
+        // 🔸 Oculta o modelo original
         model.mesh.visible = false;
 
-        // 🔸 Cria subset com todos os elementos visíveis
+        // 🔸 Cria subset com todos os elementos visíveis e o mesmo material do modelo original
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
 
-        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
+        const subset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
-            customID: "visibleSubset"
+            customID: "visibleSubset",
+            material: model.material   // <--- ESSENCIAL!
         });
 
         // 🔸 Adiciona o subset visível à cena
-        viewer.context.getScene().add(visibleSubset);
+        viewer.context.getScene().add(subset);
 
         viewer.shadowDropper.renderShadow(currentModelID);
         return model;
     }
+
 
     // --- Inicializa ---
     viewer = CreateViewer(container);
