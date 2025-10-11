@@ -5,6 +5,7 @@ let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
 let visibleSubset = null; // armazenará o subset atual visível
+let originalMaterial = null; // 🔴 NOVO: Para armazenar o material do modelo original
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -22,6 +23,55 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
+    // --- Lógica de Ocultar/Exibir ---
+
+    // 1. Oculta o item selecionado (remove do subset visível)
+    function hideSelected() {
+        if (!lastPickedItem || currentModelID === -1) {
+            alert("Nenhum item selecionado. Dê um duplo clique para selecionar primeiro.");
+            return;
+        }
+
+        // 🟢 CORREÇÃO: Remove o item do subset existente
+        viewer.IFC.loader.ifcManager.removeFromSubset(
+            visibleSubset.geometry.attributes.expressID.array, 
+            lastPickedItem.id, 
+            currentModelID, 
+            "visibleSubset"
+        );
+
+        console.log(`🔹 Item ${lastPickedItem.id} ocultado.`);
+        viewer.IFC.selector.unpickIfcItems();
+        lastPickedItem = null;
+    }
+
+    // 2. Exibe todos os elementos (recria o subset com todos os IDs)
+    async function showAll() {
+        if (currentModelID === -1) return;
+
+        // Pega todos os IDs novamente
+        const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
+            currentModelID,
+            null,
+            false
+        );
+
+        // Remove o subset antigo, se existir
+        viewer.context.getScene().remove(visibleSubset);
+
+        // Recria o subset com todos os IDs e o material ORIGINAL
+        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
+            modelID: currentModelID,
+            ids: ids,
+            removePrevious: true,
+            customID: "visibleSubset",
+            // 🔴 CORREÇÃO APLICADA AQUI
+            material: originalMaterial 
+        });
+
+        console.log(`🔹 Todos os elementos foram exibidos novamente.`);
+    }
+
     // --- Carrega IFC ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
@@ -31,41 +81,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // 🔸 Oculta o modelo original
+        // 🔴 NOVO: Extrai o material do modelo original ANTES de escondê-lo
+        // Nota: O material está no primeiro elemento do array 'materials' do Mesh
+        originalMaterial = model.mesh.material[0]; 
+
+        // 🔸 Oculta o modelo original (a geometria completa)
         model.mesh.visible = false;
 
-        // 🔸 Cria subset com todos os elementos visíveis e o mesmo material do modelo original
+        // 🔸 Cria o subset visível inicial com todos os elementos e o material ORIGINAL
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
 
-        const subset = viewer.IFC.loader.ifcManager.createSubset({
+        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
-            ids,
+            ids: ids,
             removePrevious: true,
             customID: "visibleSubset",
-            material: model.material   // <--- ESSENCIAL!
+            // 🔴 CORREÇÃO APLICADA AQUI
+            material: originalMaterial 
         });
 
-        // 🔸 Adiciona o subset visível à cena
-        viewer.context.getScene().add(subset);
-
         viewer.shadowDropper.renderShadow(currentModelID);
-        return model;
     }
 
-
-    // --- Inicializa ---
+    // --- Inicialização e Event Listeners ---
     viewer = CreateViewer(container);
     loadIfc('models/01.ifc');
 
     const input = document.getElementById("file-input");
-    const hideSelectedButton = document.getElementById("hide-selected");
-    const showAllButton = document.getElementById("show-all");
+    const hideSelectedButton = document.getElementById('hide-selected');
+    const showAllButton = document.getElementById('show-all');
 
-    // --- Upload manual ---
     if (input) {
         input.addEventListener("change", async (changed) => {
             const file = changed.target.files[0];
@@ -74,54 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, false);
     }
 
-    // =======================================================
-    // 🔹 CONTROLE DE VISIBILIDADE USANDO SUBSETS
-    // =======================================================
-
-    async function hideSelected() {
-        if (!lastPickedItem || currentModelID === -1) {
-            alert("Nenhum item selecionado. Dê um duplo clique para selecionar primeiro.");
-            return;
-        }
-
-        const expressID = lastPickedItem.id;
-
-        viewer.IFC.loader.ifcManager.removeFromSubset(
-            currentModelID,
-            [expressID],
-            "visibleSubset"
-        );
-
-        console.log(`🔹 Item ${expressID} ocultado.`);
-        viewer.IFC.selector.unpickIfcItems();
-        lastPickedItem = null;
-    }
-
-    async function showAll() {
-        if (currentModelID === -1) return;
-
-        const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
-            currentModelID,
-            null,
-            false
-        );
-
-        // Recria o subset completo
-        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
-            modelID: currentModelID,
-            ids,
-            removePrevious: true,
-            customID: "visibleSubset"
-        });
-
-        // Garante que está na cena (em caso de remoção prévia)
-        if (!viewer.context.getScene().children.includes(visibleSubset)) {
-            viewer.context.getScene().add(visibleSubset);
-        }
-
-        console.log(`🔹 Todos os elementos foram exibidos novamente.`);
-    }
-
+    // Mapeamento de botões (assumindo que você tem hide-selected e show-all no HTML)
     if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
     if (showAllButton) showAllButton.onclick = showAll;
 
