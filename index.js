@@ -104,10 +104,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // Oculta o item usando o ID salvo
+            // 🚨 Ação que estava faltando: OCULTAR
             viewer.IFC.setIfcVisibility(currentModelID, [lastPickedItem.id], false);
             
-            // Opcional: Limpa a seleção e o destaque
+            // Limpa a seleção e o destaque
             viewer.IFC.selector.unpickIfcItems();
             lastPickedItem = null;
         };
@@ -142,13 +142,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Tenta selecionar o item (realça a geometria)
         const item = await viewer.IFC.selector.pickIfcItem(true);
         
-        // 🚨 CRUCIAL: Se o item for nulo (clicou no fundo), interrompe e evita o erro
+        // 🚨 CORREÇÃO DO TYPE ERROR: Se o item for nulo (clicou no fundo), interrompe
         if (!item || item.modelID === undefined || item.id === undefined) return;
         
-        // Salva o item selecionado para que o botão "Ocultar Selecionado" possa usá-lo
+        // 🚨 AÇÃO CRUCIAL: Salva o item selecionado
         lastPickedItem = item; 
         
-        // Mostra as propriedades no console
+        // Mostra as propriedades no console (o que você viu funcionando)
         console.log(await viewer.IFC.getProperties(item.modelID, item.id, true));
     }
 
