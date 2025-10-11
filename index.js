@@ -1,4 +1,4 @@
-// index.js (CÓDIGO COMPLETO E CORRIGIDO)
+// index.js (CÓDIGO COMPLETO E FINAL)
 import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
@@ -29,10 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const ifcManager = viewer.IFC.loader.ifcManager;
         const categoryControls = document.getElementById('category-controls');
         
-        // CORREÇÃO: Verifica se a função existe
+        // Proteção contra o erro getAllCategories
         if (typeof ifcManager.getAllCategories !== 'function') {
              console.warn("A função getAllCategories não está disponível nesta versão da biblioteca. Pulando o controle de categorias.");
-             // Oculta o painel de controle se a função não existir
              if (categoryControls) categoryControls.style.display = 'none';
              return;
         }
@@ -56,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // CORREÇÃO: Função usa o caminho mais provável para setVisibility
     function setCategoryVisibility(isVisible) {
         const categoryName = categorySelect.value;
         if (!categoryName || currentModelID === -1) return;
@@ -65,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
              console.warn(`Categoria ${categoryName} não encontrada neste modelo.`);
              return;
         }
-        // CORREÇÃO DE API: Usa ifcManager.setVisibility para itens
         viewer.IFC.loader.ifcManager.setVisibility(currentModelID, categoryIds, isVisible);
     }
     
@@ -116,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert("Nenhum item selecionado. Dê um duplo clique para selecionar primeiro.");
                 return;
             }
-            // CORREÇÃO FINAL: Usando o método correto de visibilidade para itens individuais
+            // CORREÇÃO: Chama o método de visibilidade de itens (setVisibility)
             viewer.IFC.loader.ifcManager.setVisibility(currentModelID, [lastPickedItem.id], false);
             viewer.IFC.selector.unpickIfcItems();
             lastPickedItem = null;
@@ -126,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Visibilidade Geral: Exibir Tudo
     if (showAllButton) {
         showAllButton.onclick = () => {
+            // CORREÇÃO: Chama o método de visibilidade do modelo inteiro (setVisibility(true))
             viewer.IFC.loader.ifcManager.setVisibility(true); 
         };
     }
@@ -147,11 +147,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Interações do Mouse (Pré-seleção)
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
     
-    // Duplo clique: Seleciona e SALVA o item (CORRIGIDO)
+    // Duplo clique: Seleciona e SALVA o item
     window.ondblclick = async () => {
         const item = await viewer.IFC.selector.pickIfcItem(true);
         
-        // Verifica se a seleção é válida (evita TypeError)
         if (!item || item.modelID === undefined || item.id === undefined) return;
         
         lastPickedItem = item; 
