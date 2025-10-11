@@ -4,6 +4,7 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
+let visibleSubset = null; // armazenará o subset atual visível
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -30,22 +31,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // Oculta o modelo original (para controlar só via subset)
+        // 🔸 Oculta o modelo base (modelo original completo)
         model.mesh.visible = false;
 
-        // Cria subset inicial com tudo visível
+        // 🔸 Cria subset com todos os elementos visíveis
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
 
-        viewer.IFC.loader.ifcManager.createSubset({
+        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset"
         });
+
+        // 🔸 Adiciona o subset visível à cena
+        viewer.context.getScene().add(visibleSubset);
 
         viewer.shadowDropper.renderShadow(currentModelID);
         return model;
@@ -80,7 +84,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const expressID = lastPickedItem.id;
 
-        // Remove o item do subset visível
         viewer.IFC.loader.ifcManager.removeFromSubset(
             currentModelID,
             [expressID],
@@ -95,19 +98,24 @@ document.addEventListener('DOMContentLoaded', () => {
     async function showAll() {
         if (currentModelID === -1) return;
 
-        // Recria o subset completo
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
 
-        viewer.IFC.loader.ifcManager.createSubset({
+        // Recria o subset completo
+        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset"
         });
+
+        // Garante que está na cena (em caso de remoção prévia)
+        if (!viewer.context.getScene().children.includes(visibleSubset)) {
+            viewer.context.getScene().add(visibleSubset);
+        }
 
         console.log(`🔹 Todos os elementos foram exibidos novamente.`);
     }
