@@ -4,8 +4,8 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
-let visibleSubset = null; // armazenará o subset atual visível
-let originalMaterial = null; // 🔴 NOVO: Para armazenar o material do modelo original
+let visibleSubset = null; 
+let originalMaterial = null; // Para armazenar o(s) material(is) do modelo original
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 🟢 CORREÇÃO: Remove o item do subset existente
+        // 🟢 Remove o item do subset existente
         viewer.IFC.loader.ifcManager.removeFromSubset(
             visibleSubset.geometry.attributes.expressID.array, 
             lastPickedItem.id, 
@@ -65,9 +65,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ids: ids,
             removePrevious: true,
             customID: "visibleSubset",
-            // 🔴 CORREÇÃO APLICADA AQUI
+            // 🔴 CORREÇÃO APLICADA: Passa o array/material completo
             material: originalMaterial 
         });
+
+        // Garante que o subset é visível na cena
+        viewer.context.getScene().add(visibleSubset);
 
         console.log(`🔹 Todos os elementos foram exibidos novamente.`);
     }
@@ -81,20 +84,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // 🔴 NOVO: Extrai o material do modelo original ANTES de escondê-lo
-        // Nota: O material está no primeiro elemento do array 'materials' do Mesh
-        originalMaterial = model.mesh.material[0]; 
+        // 🔴 CORREÇÃO NO MATERIAL: Armazena o objeto material COMPLETO (seja Array ou Material único)
+        originalMaterial = model.mesh.material; 
 
         // 🔸 Oculta o modelo original (a geometria completa)
         model.mesh.visible = false;
-
-        // 🔸 Cria o subset visível inicial com todos os elementos e o material ORIGINAL
+        
+        // 🔸 Cria o subset visível inicial com todos os elementos
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
 
+        // O 'visibleSubset' agora é criado com o material correto
         visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids: ids,
@@ -109,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Inicialização e Event Listeners ---
     viewer = CreateViewer(container);
-    loadIfc('models/01.ifc');
+    loadIfc('models/01.ifc'); // Carrega o modelo de exemplo ao iniciar
 
     const input = document.getElementById("file-input");
     const hideSelectedButton = document.getElementById('hide-selected');
