@@ -35,9 +35,9 @@ input.addEventListener("change",
 );
 
 async function loadIfc(url) {
-    await viewer.IFC.setWasmPath("wasm/");
+    await viewer.dispose();
     viewer = CreateViewer(container);
-    // await viewer.IFC.setWasmPath("static/wasm/");
+    await viewer.IFC.setWasmPath("wasm/"); // ✅ importante
     const model = await viewer.IFC.loadIfcUrl(url);
     viewer.shadowDropper.renderShadow(model.modelID);
 }
