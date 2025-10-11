@@ -4,7 +4,7 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
-let visibleSubset = null; // 🔴 NOVO: Variável global para armazenar o subset visível
+let visibleSubset = null; // 🟢 ESSENCIAL: Armazena o subset para que hideSelected possa modificá-lo
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function CreateViewer(container) {
         const newViewer = new IfcViewerAPI({
             container,
-            backgroundColor: new Color(0xeeeeee) // Alterei de 0xFFFFFF para 0xEEEEEE (cinza claro)
+            backgroundColor: new Color(0xeeeeee)
         });
         newViewer.axes.setAxes();
         newViewer.grid.setGrid();
@@ -22,38 +22,45 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Carrega um IFC ---
+    // --- Carrega IFC ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
+
         await viewer.IFC.setWasmPath("/wasm/");
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // 🟢 CORREÇÃO CRÍTICA 1: Oculta a malha (mesh) original.
-        // Isso garante que apenas o 'visibleSubset' que criaremos será renderizado.
+        // 🔸 Oculta o modelo original
+        // 🔴 CORREÇÃO 1: ESSENCIAL para que o subset funcione. Apenas o subset deve ser visível.
         model.mesh.visible = false; 
 
-        // Cria subset inicial com tudo visível
+        // 🔸 Cria subset com todos os elementos visíveis e o mesmo material do modelo original
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
-        
-        // 🟢 CORREÇÃO CRÍTICA 2: Captura o subset criado na variável global 'visibleSubset'
-        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
+
+        // 🔴 CORREÇÃO 2: Usa model.mesh.material (o material real está no mesh, não no objeto model)
+        const subset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
-            customID: "visibleSubset"
-            // Sem a propriedade 'material', ele deve usar o material herdado/padrão, 
-            // que é o que você disse que estava exibindo as cores corretas.
+            customID: "visibleSubset",
+            material: model.mesh.material 
         });
+
+        // 🔴 CORREÇÃO 3: Atribui o subset criado à variável global 'visibleSubset'
+        visibleSubset = subset;
+
+        // 🔸 Adiciona o subset visível à cena (necessário para a versão 1.x)
+        viewer.context.getScene().add(visibleSubset);
 
         viewer.shadowDropper.renderShadow(currentModelID);
         return model;
     }
+
 
     // --- Inicializa ---
     viewer = CreateViewer(container);
@@ -82,13 +89,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // 🔴 CORREÇÃO 3: Uso do método e argumentos corretos para remover de um subset
-        // Precisamos passar os IDs de geometria do subset para que o método saiba o que modificar.
+        // 🟢 O código de removeFromSubset está correto para a versão 1.x, desde que
+        // 'visibleSubset' esteja atribuído corretamente no loadIfc.
         viewer.IFC.loader.ifcManager.removeFromSubset(
-            visibleSubset.geometry.attributes.expressID.array, // IDs da geometria do subset a ser modificada
-            lastPickedItem.id,                                 // ID do elemento a ser removido
-            currentModelID,                                    // ID do modelo IFC
-            "visibleSubset"                                    // ID do subset
+            currentModelID,
+            [lastPickedItem.id], // Usa o ID do item
+            "visibleSubset"
         );
 
         console.log(`🔹 Item ${lastPickedItem.id} ocultado.`);
@@ -99,20 +105,30 @@ document.addEventListener('DOMContentLoaded', () => {
     async function showAll() {
         if (currentModelID === -1) return;
 
-        // Recria o subset completo
+        // Pega os IDs novamente
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
         
-        // 🟢 Recria o subset, o que efetivamente exibe todos os IDs novamente
+        // Recria o subset completo com o material do modelo original.
+        // Necessário obter o material novamente (melhor prática, embora menos eficiente)
+        // ou armazená-lo globalmente (o que a gente evitou para simplificar).
+        const model = viewer.IFC.get(); // Pega a referência do modelo
+        
         visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
-            customID: "visibleSubset"
+            customID: "visibleSubset",
+            material: model.mesh.material // 🔴 CORREÇÃO 4: Garante que o material seja usado na recriação
         });
+
+        // Garante que está na cena (em caso de remoção prévia)
+        if (!viewer.context.getScene().children.includes(visibleSubset)) {
+            viewer.context.getScene().add(visibleSubset);
+        }
 
         console.log(`🔹 Todos os elementos foram exibidos novamente.`);
     }
