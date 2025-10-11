@@ -27,25 +27,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!categorySelect || currentModelID === -1) return;
 
         const ifcManager = viewer.IFC.loader.ifcManager;
+        const categoryControls = document.getElementById('category-controls');
         
-        // CORREÇÃO CRÍTICA: Verifica se a função existe na versão atual
+        // CORREÇÃO: Verifica se a função existe
         if (typeof ifcManager.getAllCategories !== 'function') {
              console.warn("A função getAllCategories não está disponível nesta versão da biblioteca. Pulando o controle de categorias.");
              // Oculta o painel de controle se a função não existir
-             const categoryControls = document.getElementById('category-controls');
              if (categoryControls) categoryControls.style.display = 'none';
              return;
         }
 
         categorySelect.innerHTML = '<option value="" disabled selected>Escolha a Categoria</option>';
         
-        modelCategories = await ifcManager.getAllCategories(modelID);
+        try {
+            modelCategories = await ifcManager.getAllCategories(modelID);
 
-        for (const category in modelCategories) {
-            const option = document.createElement('option');
-            option.value = category;
-            option.textContent = category;
-            categorySelect.appendChild(option);
+            for (const category in modelCategories) {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categorySelect.appendChild(option);
+            }
+            if (categoryControls) categoryControls.style.display = 'block';
+            
+        } catch (error) {
+             console.error("Erro ao popular categorias:", error);
+             if (categoryControls) categoryControls.style.display = 'none';
         }
     }
     
@@ -58,7 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
              console.warn(`Categoria ${categoryName} não encontrada neste modelo.`);
              return;
         }
-        viewer.IFC.setIfcVisibility(currentModelID, categoryIds, isVisible);
+        // CORREÇÃO DE API: Usa ifcManager.setVisibility para itens
+        viewer.IFC.loader.ifcManager.setVisibility(currentModelID, categoryIds, isVisible);
     }
     
     // --- Lógica de Carregamento ---
@@ -108,7 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert("Nenhum item selecionado. Dê um duplo clique para selecionar primeiro.");
                 return;
             }
-            viewer.IFC.setIfcVisibility(currentModelID, [lastPickedItem.id], false);
+            // CORREÇÃO FINAL: Usando o método correto de visibilidade para itens individuais
+            viewer.IFC.loader.ifcManager.setVisibility(currentModelID, [lastPickedItem.id], false);
             viewer.IFC.selector.unpickIfcItems();
             lastPickedItem = null;
         };
@@ -138,10 +147,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Interações do Mouse (Pré-seleção)
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
     
-    // Duplo clique: Seleciona e SALVA o item
+    // Duplo clique: Seleciona e SALVA o item (CORRIGIDO)
     window.ondblclick = async () => {
         const item = await viewer.IFC.selector.pickIfcItem(true);
         
+        // Verifica se a seleção é válida (evita TypeError)
         if (!item || item.modelID === undefined || item.id === undefined) return;
         
         lastPickedItem = item; 
