@@ -1,6 +1,9 @@
 import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
+// Variável para armazenar o ID do modelo atualmente carregado
+let currentModelID = -1;
+
 // 🚨 TUDO ENVOLVIDO AQUI PARA GARANTIR QUE OS ELEMENTOS ESTEJAM CARREGADOS
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -34,10 +37,14 @@ document.addEventListener('DOMContentLoaded', () => {
         await viewer.IFC.setWasmPath("/wasm/"); 
         
         const model = await viewer.IFC.loadIfcUrl(url);
-        viewer.shadowDropper.renderShadow(model.modelID);
+        
+        // 🚨 CORREÇÃO CRUCIAL: Salva o ID do modelo carregado
+        currentModelID = model.modelID;
+
+        viewer.shadowDropper.renderShadow(currentModelID);
         
         // Popula as categorias após o carregamento
-        await populateCategoryDropdown(model.modelID);
+        await populateCategoryDropdown(currentModelID);
 
         return model;
     }
@@ -61,9 +68,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    function setCategoryVisibility(modelID, isVisible) {
+    function setCategoryVisibility(isVisible) {
         const categoryName = categorySelect.value;
-        if (!categoryName) return;
+        if (!categoryName || currentModelID === -1) return;
 
         // Verifica se a categoria foi encontrada no modelo
         const categoryIds = modelCategories[categoryName];
@@ -73,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Oculta/Exibe os elementos usando os IDs da categoria
-        viewer.IFC.setIfcVisibility(modelID, categoryIds, isVisible);
+        viewer.IFC.setIfcVisibility(currentModelID, categoryIds, isVisible);
     }
     
     // --- Carregamento Inicial ---
@@ -105,17 +112,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. Visibilidade Geral: Ocultar Selecionado
     if (hideSelectedButton) {
         hideSelectedButton.onclick = async () => {
+            if (currentModelID === -1) return;
             const item = await viewer.IFC.selector.pickIfcItem(true);
             if (!item) return;
-            // Oculta o item: setIfcVisibility(modelID, [ids], visibility)
-            viewer.IFC.setIfcVisibility(item.modelID, [item.id], false); 
+            
+            // Oculta o item selecionado
+            viewer.IFC.setIfcVisibility(currentModelID, [item.id], false);
         };
     }
 
     // 3. Visibilidade Geral: Exibir Tudo
     if (showAllButton) {
         showAllButton.onclick = () => {
-            // Usa a função do manager para tornar todos os elementos visíveis
+            // Exibe todos os elementos em todos os modelos.
             viewer.IFC.loader.ifcManager.setVisibility(true); 
         };
     }
@@ -124,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hideCategoryButton) {
         hideCategoryButton.onclick = () => {
              // Oculta a categoria selecionada (false)
-            setCategoryVisibility(viewer.model.modelID, false);
+            setCategoryVisibility(false);
         };
     }
     
@@ -132,21 +141,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (showCategoryButton) {
         showCategoryButton.onclick = () => {
              // Exibe a categoria selecionada (true)
-            setCategoryVisibility(viewer.model.modelID, true);
+            setCategoryVisibility(true);
         };
     }
 
     // 6. Interações do Mouse
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
     
-    // Duplo clique agora exibe as propriedades
+    // 7. Duplo clique: Oculta e mostra propriedades
     window.ondblclick = async () => {
+        // CORREÇÃO CRUCIAL: Verificação de null
         const item = await viewer.IFC.selector.pickIfcItem(true);
-        if (item.modelID === undefined || item.id === undefined) return;
+        
+        // Se a seleção falhar (clicar no fundo), 'item' será null ou undefined. Apenas retorna.
+        if (!item || item.modelID === undefined || item.id === undefined) return;
+        
+        // Oculta o item (Agora o item existe)
+        viewer.IFC.setIfcVisibility(item.modelID, [item.id], false); 
+
+        // Mostra as propriedades no console
         console.log(await viewer.IFC.getProperties(item.modelID, item.id, true));
     }
 
-    // 7. Mantendo os atalhos de teclado (para corte, caso queira reativar)
+    // 8. Mantendo os atalhos de teclado (para corte, caso queira reativar)
     window.onkeydown = (event) => {
         if (event.code === 'KeyP') {
             viewer.clipper.createPlane();
