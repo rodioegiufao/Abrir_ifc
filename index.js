@@ -1,4 +1,4 @@
-// index.js (CÓDIGO FINAL E PARA VERSÃO MODERNA)
+// index.js (CÓDIGO FINAL E SIMPLIFICADO)
 import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let viewer; 
 
     function CreateViewer(container) {
+        // Cor de fundo do viewer
         let newViewer = new IfcViewerAPI({ container, backgroundColor: new Color(0xeeeeee) }); 
         newViewer.axes.setAxes();
         newViewer.grid.setGrid();
@@ -27,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         viewer = CreateViewer(container);
         
-        // Caminho do WASM
+        // Caminho do WASM (o que resolvemos)
         await viewer.IFC.setWasmPath("/wasm/"); 
         
         const model = await viewer.IFC.loadIfcUrl(url);
@@ -41,12 +42,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Inicialização e Event Listeners ---
     viewer = CreateViewer(container);
-    loadIfc('models/01.ifc');
+    loadIfc('models/01.ifc'); // Carrega o modelo de exemplo ao iniciar
     
     const input = document.getElementById("file-input");
     const hideSelectedButton = document.getElementById('hide-selected');
     const showAllButton = document.getElementById('show-all');
-
+    
     // Listener para carregar arquivo
     if (input) {
         input.addEventListener("change", async (changed) => {
@@ -63,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert("Nenhum item selecionado. Dê um duplo clique para selecionar primeiro.");
                 return;
             }
-            // CAMINHO CORRETO PARA VERSÕES MODERNAS (AGORA ATUALIZADAS)
+            // SINTAXE MODERNA E CORRETA PARA A VERSÃO 1.0.218
             viewer.IFC.loader.ifcManager.setVisibility(currentModelID, [lastPickedItem.id], false);
             viewer.IFC.selector.unpickIfcItems();
             lastPickedItem = null;
@@ -73,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Visibilidade Geral: Exibir Tudo
     if (showAllButton) {
         showAllButton.onclick = () => {
-             // CAMINHO CORRETO PARA VERSÕES MODERNAS (AGORA ATUALIZADAS)
+             // SINTAXE MODERNA E CORRETA PARA A VERSÃO 1.0.218
             viewer.IFC.loader.ifcManager.setVisibility(true); 
         };
     }
