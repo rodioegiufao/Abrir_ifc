@@ -21,13 +21,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Carrega um IFC ---
+    // --- Carrega IFC ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
+
         await viewer.IFC.setWasmPath("/wasm/");
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
+
+        // Oculta o modelo original (para controlar só via subset)
+        model.mesh.visible = false;
 
         // Cria subset inicial com tudo visível
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
@@ -35,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
             null,
             false
         );
+
         viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
