@@ -34,12 +34,15 @@ input.addEventListener("change",
     false
 );
 
-// index.js (CORRIGIDO)
+// index.js
+
 async function loadIfc(url) {
     await viewer.dispose();
     viewer = CreateViewer(container);
-    // ⚠️ ALTERE ESTA LINHA PARA O SEGUINTE:
+    
+    // 💡 IMPORTANTE: O caminho DEVE ser o diretório /wasm/ e terminar com uma barra.
     await viewer.IFC.setWasmPath("/wasm/"); 
+    
     const model = await viewer.IFC.loadIfcUrl(url);
     viewer.shadowDropper.renderShadow(model.modelID);
 }
