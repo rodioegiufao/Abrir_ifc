@@ -11,5 +11,15 @@
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }
       ]
     }
+  ],
+  "rewrites": [
+    { 
+      "source": "/web-ifc.wasm", 
+      "destination": "/wasm/web-ifc.wasm" 
+    },
+    { 
+      "source": "/web-ifc-mt.wasm", 
+      "destination": "/wasm/web-ifc-mt.wasm" 
+    }
   ]
 }
