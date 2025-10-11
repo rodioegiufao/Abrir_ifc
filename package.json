@@ -1,25 +1,17 @@
 {
-  "name": "ifcjs-viewer-project",
+  "name": "ifcjs-viewer-101",
   "version": "1.0.0",
-  "description": "Visualizador IFC simples usando web-ifc-viewer e Rollup",
+  "description": "Basic source code for Web-IFC-Viewer",
   "main": "index.js",
   "scripts": {
     "build": "rollup -c ./rollup.config.js",
     "watch": "rollup -w -c ./rollup.config.js"
   },
-  "keywords": [
-    "ifc",
-    "bim",
-    "webgl",
-    "threejs"
-  ],
-  "author": "Seu Nome",
-  "license": "ISC",
   "dependencies": {
-    "web-ifc-viewer": "^1.0.177"
+    "web-ifc-viewer": "^1.0.218"
   },
   "devDependencies": {
-    "@rollup/plugin-node-resolve": "^13.3.0",
-    "rollup": "^2.71.1"
+    "@rollup/plugin-node-resolve": "^14.1.0",
+    "rollup": "^2.78.0"
   }
 }
