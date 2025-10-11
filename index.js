@@ -3,7 +3,7 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 
 // --- VARIÁVEIS GLOBAIS ---
 let currentModelID = -1;
-let lastPickedItem = null; // 🚨 NOVO: Armazena o último item selecionado.
+let lastPickedItem = null; // 🚨 CRUCIAL: Armazena o último item selecionado.
 
 // 🚨 TUDO ENVOLVIDO AQUI PARA GARANTIR QUE OS ELEMENTOS ESTEJAM CARREGADOS
 document.addEventListener('DOMContentLoaded', () => {
@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         viewer = CreateViewer(container);
         
+        // Use o caminho WASM conforme seu vercel.json
         await viewer.IFC.setWasmPath("/wasm/"); 
         
         const model = await viewer.IFC.loadIfcUrl(url);
@@ -43,19 +44,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return model;
     }
     
-    // --- Lógica de Categoria ---
-    
+    // --- Lógica de Categoria (Opcional, mas completa) ---
     async function populateCategoryDropdown(modelID) {
+        // ... (código para popular o dropdown)
+        // Omitido aqui para brevidade, mas deve ser mantido no seu arquivo.
+        // Se você usou o código completo do meu passo anterior, ele está aqui.
         categorySelect.innerHTML = '<option value="" disabled selected>Escolha a Categoria</option>';
-        
-        const ifcManager = viewer.IFC.loader.ifcManager;
-        modelCategories = await ifcManager.getAllCategories(modelID);
+        if (categorySelect) {
+            const ifcManager = viewer.IFC.loader.ifcManager;
+            modelCategories = await ifcManager.getAllCategories(modelID);
 
-        for (const category in modelCategories) {
-            const option = document.createElement('option');
-            option.value = category;
-            option.textContent = category;
-            categorySelect.appendChild(option);
+            for (const category in modelCategories) {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categorySelect.appendChild(option);
+            }
         }
     }
     
@@ -104,13 +108,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // 🚨 Ação que estava faltando: OCULTAR
+            // Oculta o item usando o ID salvo
             viewer.IFC.setIfcVisibility(currentModelID, [lastPickedItem.id], false);
             
             // Limpa a seleção e o destaque
             viewer.IFC.selector.unpickIfcItems();
             lastPickedItem = null;
         };
+    } else {
+        console.error("Erro: Botão 'hide-selected' não encontrado. Verifique o index.html.");
     }
 
     // 3. Visibilidade Geral: Exibir Tudo
@@ -139,16 +145,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 7. Duplo clique: Seleciona, SALVA o item e mostra propriedades
     window.ondblclick = async () => {
-        // Tenta selecionar o item (realça a geometria)
         const item = await viewer.IFC.selector.pickIfcItem(true);
         
-        // 🚨 CORREÇÃO DO TYPE ERROR: Se o item for nulo (clicou no fundo), interrompe
+        // 🚨 CORREÇÃO DO TYPE ERROR: Se o item for nulo, interrompe.
         if (!item || item.modelID === undefined || item.id === undefined) return;
         
         // 🚨 AÇÃO CRUCIAL: Salva o item selecionado
         lastPickedItem = item; 
         
-        // Mostra as propriedades no console (o que você viu funcionando)
+        // Mostra as propriedades no console
         console.log(await viewer.IFC.getProperties(item.modelID, item.id, true));
     }
 
