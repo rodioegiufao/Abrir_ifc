@@ -4,7 +4,7 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
-let visibleSubset = null; // 🟢 ESSENCIAL: Armazena o subset para que hideSelected possa modificá-lo
+let visibleSubset = null; // Armazena o subset para que hideSelected possa modificá-lo
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -31,30 +31,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // 🔸 Oculta o modelo original
-        // 🔴 CORREÇÃO 1: ESSENCIAL para que o subset funcione. Apenas o subset deve ser visível.
+        // 🔴 CORREÇÃO 1: ESSENCIAL. Oculta o modelo original para que apenas o subset seja renderizado.
         model.mesh.visible = false; 
 
-        // 🔸 Cria subset com todos os elementos visíveis e o mesmo material do modelo original
+        // 🔸 Cria subset com todos os elementos visíveis
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
 
-        // 🔴 CORREÇÃO 2: Usa model.mesh.material (o material real está no mesh, não no objeto model)
         const subset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset",
+            // 🔴 CORREÇÃO 2: Usa model.mesh.material (o material está no mesh, não no model)
             material: model.mesh.material 
         });
 
-        // 🔴 CORREÇÃO 3: Atribui o subset criado à variável global 'visibleSubset'
-        visibleSubset = subset;
+        // 🔴 CORREÇÃO 3: Atribui o subset criado à variável global 'visibleSubset'.
+        visibleSubset = subset; 
 
-        // 🔸 Adiciona o subset visível à cena (necessário para a versão 1.x)
+        // 🔸 Adiciona o subset visível à cena
         viewer.context.getScene().add(visibleSubset);
 
         viewer.shadowDropper.renderShadow(currentModelID);
@@ -88,16 +87,17 @@ document.addEventListener('DOMContentLoaded', () => {
             alert("Nenhum item selecionado. Dê um duplo clique para selecionar primeiro.");
             return;
         }
-        
-        // 🟢 O código de removeFromSubset está correto para a versão 1.x, desde que
-        // 'visibleSubset' esteja atribuído corretamente no loadIfc.
+
+        const expressID = lastPickedItem.id;
+
+        // Esta sintaxe de removeFromSubset é a correta para a sua versão (1.x)
         viewer.IFC.loader.ifcManager.removeFromSubset(
             currentModelID,
-            [lastPickedItem.id], // Usa o ID do item
+            [expressID],
             "visibleSubset"
         );
 
-        console.log(`🔹 Item ${lastPickedItem.id} ocultado.`);
+        console.log(`🔹 Item ${expressID} ocultado.`);
         viewer.IFC.selector.unpickIfcItems();
         lastPickedItem = null;
     }
@@ -105,27 +105,26 @@ document.addEventListener('DOMContentLoaded', () => {
     async function showAll() {
         if (currentModelID === -1) return;
 
-        // Pega os IDs novamente
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
-        
-        // Recria o subset completo com o material do modelo original.
-        // Necessário obter o material novamente (melhor prática, embora menos eficiente)
-        // ou armazená-lo globalmente (o que a gente evitou para simplificar).
-        const model = viewer.IFC.get(); // Pega a referência do modelo
-        
+
+        // Pega a referência do modelo para recriar o subset com o material correto
+        const model = viewer.IFC.get(); 
+
+        // Recria o subset completo
         visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset",
-            material: model.mesh.material // 🔴 CORREÇÃO 4: Garante que o material seja usado na recriação
+            // Garante que o material correto seja aplicado na recriação
+            material: model.mesh.material 
         });
 
-        // Garante que está na cena (em caso de remoção prévia)
+        // Garante que está na cena
         if (!viewer.context.getScene().children.includes(visibleSubset)) {
             viewer.context.getScene().add(visibleSubset);
         }
