@@ -9,6 +9,15 @@ function CreateViewer(container) {
     return viewer;
 }
 
+// Mapeamento de Botões da UI
+document.getElementById('create-plane').onclick = () => {
+    viewer.clipper.createPlane();
+};
+
+document.getElementById('delete-plane').onclick = () => {
+    viewer.clipper.deletePlane();
+};
+
 const container = document.getElementById('viewer-container');
 let viewer = CreateViewer(container);
 const input = document.getElementById("file-input");
@@ -49,6 +58,7 @@ async function loadIfc(url) {
 
 loadIfc('models/01.ifc');
 
+// Mantendo o teclado:
 window.onkeydown = (event) => {
     if (event.code === 'KeyP') {
         viewer.clipper.createPlane();
@@ -59,4 +69,4 @@ window.onkeydown = (event) => {
     else if (event.code === 'Escape') {
         viewer.IFC.selector.unpickIfcItems();
     }
-}
+};

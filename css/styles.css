@@ -1,0 +1,117 @@
+/* Variáveis de Cores inspiradas no seu blog */
+:root {
+    --primary-color: #007bff; /* Azul forte, semelhante ao do seu blog */
+    --secondary-color: #f8f9fa; /* Fundo claro para a UI */
+    --background-color: #ffffff; /* Fundo do corpo */
+    --text-color: #343a40; /* Texto escuro */
+    --border-color: #ced4da;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Roboto', sans-serif; /* Fonte que você já usa */
+}
+
+html,
+body {
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    background-color: var(--background-color);
+}
+
+/* Container do Visualizador */
+#viewer-container {
+    position: fixed;
+    left: 0;
+    top: 0;
+    outline: none;
+    width: 100%;
+    height: 100%;
+}
+
+/* Painel de Controle (Fica no canto superior direito) */
+#ui-panel {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: var(--secondary-color);
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+}
+
+#ui-panel h4 {
+    color: var(--primary-color);
+    margin-bottom: 10px;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 5px;
+}
+
+/* Botões */
+button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    margin: 5px 0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s ease;
+    display: block; /* Botões um abaixo do outro */
+    width: 100%;
+}
+
+button:hover {
+    background-color: #0056b3; /* Tom mais escuro no hover */
+}
+
+/* Estilo para o Input de Arquivo (Customizado) */
+#file-input-container {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 10px;
+}
+
+#file-input-label {
+    display: block;
+    background-color: #4CAF50; /* Verde para 'Abrir' */
+    color: white;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.3s;
+}
+
+#file-input-label:hover {
+    background-color: #45a049;
+}
+
+#file-input {
+    display: none; /* Esconde o input feio */
+}
+
+/* Notification Bar (Rodapé para branding) */
+#notification {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+    padding: 8px 20px;
+    text-align: center;
+    border-top: 1px solid var(--border-color);
+    z-index: 10;
+}
+
+#notification a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: bold;
+}
