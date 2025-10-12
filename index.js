@@ -1,9 +1,9 @@
 import { 
     Color, Scene, WebGLRenderer, PerspectiveCamera, 
     AmbientLight, DirectionalLight, Raycaster, Vector2,
-    Box3, Vector3
+    Box3, Vector3, Group
 } from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { IFCLoader } from 'web-ifc-three';
 
 let scene, renderer, camera, controls;
