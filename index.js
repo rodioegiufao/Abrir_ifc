@@ -1,4 +1,16 @@
-import { Color, Scene, WebGLRenderer, PerspectiveCamera, AmbientLight, DirectionalLight } from 'three';
+import { 
+    Color, 
+    Scene, 
+    WebGLRenderer, 
+    PerspectiveCamera, 
+    AmbientLight, 
+    DirectionalLight,
+    Raycaster,
+    Vector2,
+    Box3,
+    Vector3,
+    MeshPhongMaterial
+} from 'three';
 import { IFCLoader } from 'web-ifc-three';
 
 let scene, renderer, camera, ifcLoader;
@@ -166,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`🔹 Ocultando mesh:`, selectedMesh);
         selectedMesh.visible = false;
         
-        // Remove da lista de meshes visíveis
+        // Remove da lista de meshes visíveis para raycasting
         allMeshes = allMeshes.filter(mesh => mesh !== selectedMesh);
         
         deselectMesh();
@@ -176,15 +188,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- MOSTRAR TODOS ---
     function showAll() {
         // Restaura visibilidade de TODOS os meshes
-        currentModel.traverse((child) => {
-            if (child.isMesh) {
-                child.visible = true;
-            }
-        });
-        
-        // Recarrega lista de meshes
-        allMeshes = [];
-        collectAllMeshes(currentModel);
+        if (currentModel) {
+            currentModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.visible = true;
+                }
+            });
+            
+            // Recarrega lista de meshes
+            allMeshes = [];
+            collectAllMeshes(currentModel);
+        }
         
         deselectMesh();
         console.log(`✅ Todos os ${allMeshes.length} meshes visíveis`);
