@@ -27,8 +27,26 @@
             <button id="hide-selected">Ocultar Selecionado</button> 
             <button id="show-all">Exibir Tudo</button>
         </div>
-        
-        </div>
+    </div>
+
+    <!-- 🔹 FEEDBACK VISUAL DE SELEÇÃO - ADICIONE ESTE BLOCO -->
+    <div id="selection-info" style="
+        position: fixed; 
+        top: 10px; 
+        left: 50%; 
+        transform: translateX(-50%); 
+        background: rgba(0,0,0,0.8); 
+        color: white; 
+        padding: 10px 20px; 
+        border-radius: 5px; 
+        z-index: 1000; 
+        display: none;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        pointer-events: none;
+    ">
+        Item selecionado
+    </div>
 
     <div id="viewer-container"></div>
     
