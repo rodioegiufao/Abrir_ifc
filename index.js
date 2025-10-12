@@ -3,11 +3,13 @@ import {
     AmbientLight, DirectionalLight, Raycaster, Vector2,
     Box3, Vector3
 } from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { IFCLoader } from 'web-ifc-three';
 
-let scene, renderer, camera;
+let scene, renderer, camera, controls;
 let currentModel = null;
 let selectedMesh = null;
+let meshMap = new Map(); // Mapeia expressID para array de meshes
 
 document.addEventListener('DOMContentLoaded', async () => {
     const container = document.getElementById('viewer-container');
@@ -17,15 +19,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     scene.background = new Color(0xeeeeee);
     
     camera = new PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
-    camera.position.set(50, 50, 50); // Posição inicial mais afastada
+    camera.position.set(50, 50, 50);
     
     renderer = new WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
     
-    // Luz - MAIS LUZ para melhor visualização
-    scene.add(new AmbientLight(0xffffff, 0.6)); // Luz ambiente mais forte
+    // 🔥 ORBIT CONTROLS - Navegação profissional
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = false;
+    controls.minDistance = 1;
+    controls.maxDistance = 1000;
+    controls.maxPolarAngle = Math.PI;
+    
+    // Luz
+    scene.add(new AmbientLight(0xffffff, 0.6));
     const directionalLight = new DirectionalLight(0xffffff, 1);
     directionalLight.position.set(100, 100, 50);
     scene.add(directionalLight);
@@ -38,132 +49,210 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentModel = await ifcLoader.loadAsync('models/01.ifc');
     scene.add(currentModel);
     
-    // 🔥 AJUSTA A CÂMERA para visualizar o modelo completo
+    // 🔥 ORGANIZA OS MESHES POR EXPRESS ID
+    organizeMeshesByExpressID(currentModel);
+    
+    // Ajusta a câmera automaticamente
     fitCameraToObject(currentModel);
     
-    // Controles de órbita para navegação 3D
-    setupOrbitControls();
-    
     // Raycasting para seleção
-    const raycaster = new Raycaster();
-    const mouse = new Vector2();
+    setupRaycasting();
     
-    container.addEventListener('dblclick', (event) => {
-        const rect = container.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
+    // 🔥 FUNÇÃO PARA ORGANIZAR MESHES POR ID
+    function organizeMeshesByExpressID(model) {
+        meshMap.clear();
         
-        raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObject(currentModel, true);
-        
-        if (intersects.length > 0) {
-            selectedMesh = intersects[0].object;
-            console.log('✅ Mesh selecionado:', selectedMesh);
-            
-            // Feedback visual
-            const infoDiv = document.getElementById('selection-info');
-            if (infoDiv) {
-                const expressID = selectedMesh.userData?.expressID || 'N/A';
-                infoDiv.textContent = `Elemento selecionado (ID: ${expressID})`;
-                infoDiv.style.display = 'block';
+        model.traverse((child) => {
+            if (child.isMesh && child.userData && child.userData.expressID) {
+                const expressID = child.userData.expressID;
+                
+                if (!meshMap.has(expressID)) {
+                    meshMap.set(expressID, []);
+                }
+                meshMap.get(expressID).push(child);
+                
+                // Marca o mesh para fácil identificação
+                child.userData.isIFCMesh = true;
             }
-        } else {
-            // Desseleciona se clicar em área vazia
-            selectedMesh = null;
-            const infoDiv = document.getElementById('selection-info');
-            if (infoDiv) infoDiv.style.display = 'none';
-        }
-    });
+        });
+        
+        console.log(`🔹 Organizados ${meshMap.size} elementos únicos`);
+    }
     
-    // 🔥 FUNÇÃO OCULTAR - SIMPLES E DIRETA
-    function hideSelected() {
-        if (selectedMesh) {
-            selectedMesh.visible = false;
-            console.log('🔹 Mesh ocultado');
+    // 🔥 RAYCASTING CORRIGIDO
+    function setupRaycasting() {
+        const raycaster = new Raycaster();
+        const mouse = new Vector2();
+        
+        container.addEventListener('dblclick', (event) => {
+            const rect = container.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
             
-            // Limpa seleção
-            selectedMesh = null;
-            const infoDiv = document.getElementById('selection-info');
-            if (infoDiv) infoDiv.style.display = 'none';
+            raycaster.setFromCamera(mouse, camera);
+            
+            // 🔹 IMPORTANTE: Usa todos os meshes do modelo
+            const allMeshes = getAllMeshes();
+            const intersects = raycaster.intersectObjects(allMeshes, true);
+            
+            if (intersects.length > 0) {
+                const selected = intersects[0].object;
+                const expressID = selected.userData?.expressID;
+                
+                if (expressID) {
+                    selectElement(expressID);
+                    console.log('✅ Elemento selecionado - ExpressID:', expressID);
+                }
+            } else {
+                deselectElement();
+            }
+        });
+    }
+    
+    // 🔹 OBTÉM TODOS OS MESHES DO MODELO
+    function getAllMeshes() {
+        const meshes = [];
+        currentModel.traverse(child => {
+            if (child.isMesh && child.userData?.isIFCMesh) {
+                meshes.push(child);
+            }
+        });
+        return meshes;
+    }
+    
+    // 🔥 SELEÇÃO POR EXPRESS ID (TODO O ELEMENTO)
+    function selectElement(expressID) {
+        // Desseleciona anterior
+        deselectElement();
+        
+        // Encontra todos os meshes com este expressID
+        const elementMeshes = meshMap.get(expressID);
+        if (!elementMeshes) return;
+        
+        // 🔹 DESTACA TODOS OS MESHES DO ELEMENTO
+        elementMeshes.forEach(mesh => {
+            mesh.originalMaterial = mesh.material;
+            // Apenas muda a cor para destaque
+            mesh.material = mesh.material.clone();
+            mesh.material.emissive.setHex(0x444400); // Amarelo escuro para destaque
+        });
+        
+        selectedMesh = { expressID, meshes: elementMeshes };
+        
+        // Feedback visual
+        const infoDiv = document.getElementById('selection-info');
+        if (infoDiv) {
+            infoDiv.textContent = `Elemento selecionado (ID: ${expressID})`;
+            infoDiv.style.display = 'block';
+        }
+        
+        console.log(`🔹 Selecionado elemento ${expressID} com ${elementMeshes.length} meshes`);
+    }
+    
+    // 🔥 DESSELECIONA ELEMENTO
+    function deselectElement() {
+        if (selectedMesh && selectedMesh.meshes) {
+            selectedMesh.meshes.forEach(mesh => {
+                if (mesh.originalMaterial) {
+                    mesh.material = mesh.originalMaterial;
+                }
+            });
+        }
+        selectedMesh = null;
+        
+        const infoDiv = document.getElementById('selection-info');
+        if (infoDiv) infoDiv.style.display = 'none';
+    }
+    
+    // 🔥 OCULTAR SELECIONADO (AGORA OCULTA TODO O ELEMENTO)
+    function hideSelected() {
+        if (selectedMesh && selectedMesh.expressID) {
+            const elementMeshes = meshMap.get(selectedMesh.expressID);
+            
+            if (elementMeshes) {
+                elementMeshes.forEach(mesh => {
+                    mesh.visible = false;
+                });
+                
+                console.log(`🔹 Ocultado elemento ${selectedMesh.expressID} com ${elementMeshes.length} meshes`);
+                deselectElement();
+            }
         } else {
             alert('Selecione um elemento primeiro (duplo clique)');
         }
     }
     
-    // 🔥 FUNÇÃO MOSTRAR TODOS - SIMPLES E DIRETA
+    // 🔥 MOSTRAR TODOS OS ELEMENTOS
     function showAll() {
         if (currentModel) {
             currentModel.traverse(child => {
-                if (child.isMesh) child.visible = true;
+                if (child.isMesh) {
+                    child.visible = true;
+                }
             });
             console.log('🔹 Todos os elementos visíveis');
         }
+        deselectElement();
     }
     
-    // 🔥 FUNÇÃO PARA AJUSTAR CÂMERA AO MODELO
+    // 🔥 AJUSTA CÂMERA PARA VISUALIZAR O MODELO
     function fitCameraToObject(object) {
         const box = new Box3().setFromObject(object);
-        const size = box.getSize(new Vector3());
         const center = box.getCenter(new Vector3());
-        
-        // Calcula a distância necessária para caber o modelo na tela
+        const size = box.getSize(new Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = camera.fov * (Math.PI / 180);
-        const cameraZ = Math.abs(maxDim / Math.sin(fov / 2));
         
         // Posiciona a câmera
         camera.position.copy(center);
-        camera.position.z += cameraZ * 1.5; // Um pouco mais afastado
-        camera.lookAt(center);
+        camera.position.z += maxDim * 2;
+        controls.target.copy(center);
+        controls.update();
         
-        console.log('📐 Câmera ajustada para visualizar modelo 3D');
+        console.log('📐 Câmera 3D ajustada para visualização completa');
     }
     
-    // 🔥 CONTROLES DE ÓRBITA PARA NAVEGAÇÃO 3D
-    function setupOrbitControls() {
-        let isMouseDown = false;
-        let previousMousePosition = { x: 0, y: 0 };
+    // 🔥 CARREGAR NOVO ARQUIVO IFC
+    async function loadNewIfc(url) {
+        // Remove modelo anterior
+        if (currentModel) {
+            scene.remove(currentModel);
+            meshMap.clear();
+            deselectElement();
+        }
         
-        container.addEventListener('mousedown', (event) => {
-            isMouseDown = true;
-            previousMousePosition = { x: event.clientX, y: event.clientY };
-        });
+        // Carrega novo modelo
+        currentModel = await ifcLoader.loadAsync(url);
+        scene.add(currentModel);
         
-        container.addEventListener('mouseup', () => {
-            isMouseDown = false;
-        });
+        // Reorganiza os meshes
+        organizeMeshesByExpressID(currentModel);
         
-        container.addEventListener('mousemove', (event) => {
-            if (!isMouseDown) return;
-            
-            const deltaMove = {
-                x: event.clientX - previousMousePosition.x,
-                y: event.clientY - previousMousePosition.y
-            };
-            
-            // Rotação
-            camera.position.x -= deltaMove.x * 0.01;
-            camera.position.y += deltaMove.y * 0.01;
-            
-            // Mantém a câmera olhando para o centro
-            camera.lookAt(new Vector3(0, 0, 0));
-            
-            previousMousePosition = { x: event.clientX, y: event.clientY };
-        });
+        // Ajusta câmera
+        fitCameraToObject(currentModel);
         
-        // Zoom com roda do mouse
-        container.addEventListener('wheel', (event) => {
-            camera.position.z += event.deltaY * 0.01;
-        });
+        console.log('✅ Novo modelo IFC carregado');
     }
     
     // Conecta aos botões
     document.getElementById('hide-selected').onclick = hideSelected;
     document.getElementById('show-all').onclick = showAll;
     
+    // Upload de arquivo
+    const input = document.getElementById("file-input");
+    if (input) {
+        input.addEventListener("change", async (changed) => {
+            const file = changed.target.files[0];
+            if (file) {
+                const ifcURL = URL.createObjectURL(file);
+                await loadNewIfc(ifcURL);
+            }
+        });
+    }
+    
     // Animação
     function animate() {
         requestAnimationFrame(animate);
+        controls.update(); // 🔹 IMPORTANTE: Atualiza controles
         renderer.render(scene, camera);
     }
     animate();
