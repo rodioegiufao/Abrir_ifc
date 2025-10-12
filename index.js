@@ -1,26 +1,21 @@
-import { Color, MeshLambertMaterial } from 'three'; // 🔴 NOVO: Importa MeshLambertMaterial
+// CÓDIGO FINAL DE SUBSUMPTION NO index.js
+
+import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
 let visibleSubset = null; 
-
-// 🔴 ESTRATÉGIA FINAL: Define um material simples Three.js
-const DEFAULT_MATERIAL = new MeshLambertMaterial({
-    color: new Color(0xaaaaaa), // Cinza claro
-    side: 2, // Garante que a renderização de faces internas funcione
-    transparent: true,
-    opacity: 0.9 
-});
+let originalMaterial = null; // Vamos guardar o material original para showAll
 
 
 document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
-    // --- Cria o viewer ---
     function CreateViewer(container) {
+        // ... (código CreateViewer idêntico)
         const newViewer = new IfcViewerAPI({
             container,
             backgroundColor: new Color(0xeeeeee)
@@ -31,7 +26,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Carrega IFC ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
@@ -42,6 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 🟢 PASSO 1 CRÍTICO: Oculta o modelo original
         model.mesh.visible = false; 
+
+        // Guarda o material original para que o subset o utilize
+        originalMaterial = model.mesh.material; 
 
         // 🔸 Cria subset com todos os elementos visíveis
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
@@ -55,41 +52,18 @@ document.addEventListener('DOMContentLoaded', () => {
             ids,
             removePrevious: true,
             customID: "visibleSubset",
-            // 🔴 CORREÇÃO FINAL: Força o material Three.js simples
-            material: DEFAULT_MATERIAL 
+            // 🟢 Usa o material original
+            material: originalMaterial 
         });
 
-        // 🟢 PASSO 3: Atribui o subset criado
         visibleSubset = subset; 
-
-        // 🔸 Adiciona o subset visível à cena
         viewer.context.getScene().add(visibleSubset);
 
         viewer.shadowDropper.renderShadow(currentModelID);
         return model;
     }
 
-
-    // --- Inicializa ---
-    viewer = CreateViewer(container);
-    loadIfc('models/01.ifc');
-
-    const input = document.getElementById("file-input");
-    const hideSelectedButton = document.getElementById("hide-selected");
-    const showAllButton = document.getElementById("show-all");
-
-    // --- Upload manual ---
-    if (input) {
-        input.addEventListener("change", async (changed) => {
-            const file = changed.target.files[0];
-            const ifcURL = URL.createObjectURL(file);
-            await loadIfc(ifcURL);
-        }, false);
-    }
-
-    // =======================================================
-    // 🔹 CONTROLE DE VISIBILIDADE USANDO SUBSETS
-    // =======================================================
+    // --- Lógica de Ocultar/Exibir ---
 
     async function hideSelected() {
         if (!lastPickedItem || currentModelID === -1) {
@@ -99,12 +73,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const expressID = lastPickedItem.id;
         
-        // Oculta o item removendo-o da malha de visualização
+        // ❌ CORREÇÃO CRÍTICA FINAL: Passa o ModelID e o ExpressID, e o CustomID do subset.
+        // Remove o elemento do SUBSET (que está visível), e o elemento some.
+        // Esta sintaxe de 3 argumentos é a que *deve* funcionar na sua versão.
         viewer.IFC.loader.ifcManager.removeFromSubset(
             currentModelID,
             [expressID],
             "visibleSubset"
         );
+        
+        // Se a sintaxe acima falhar, troque para esta:
+        /*
+        viewer.IFC.loader.ifcManager.removeFromSubset(
+            currentModelID,
+            [expressID],
+            undefined,
+            "visibleSubset"
+        );
+        */
 
         console.log(`🔹 Item ${expressID} ocultado.`);
         viewer.IFC.selector.unpickIfcItems();
@@ -120,13 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
             false
         );
 
-        // Recria o subset completo com o material simples
+        // Recria o subset completo com o material original salvo
         visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset",
-            material: DEFAULT_MATERIAL // 🔴 USANDO MATERIAL SIMPLES
+            material: originalMaterial 
         });
 
         if (!viewer.context.getScene().children.includes(visibleSubset)) {
@@ -136,12 +122,27 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`🔹 Todos os elementos foram exibidos novamente.`);
     }
 
+    // --- Inicialização e Event Listeners (Mantidos) ---
+    viewer = CreateViewer(container);
+    loadIfc('models/01.ifc');
+    
+    // ... (restante dos event listeners)
+
+    const input = document.getElementById("file-input");
+    const hideSelectedButton = document.getElementById("hide-selected");
+    const showAllButton = document.getElementById("show-all");
+
+    if (input) {
+        input.addEventListener("change", async (changed) => {
+            const file = changed.target.files[0];
+            const ifcURL = URL.createObjectURL(file);
+            await loadIfc(ifcURL);
+        }, false);
+    }
+
     if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
     if (showAllButton) showAllButton.onclick = showAll;
 
-    // =======================================================
-    // 🔹 INTERAÇÕES DE SELEÇÃO
-    // =======================================================
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
 
     window.ondblclick = async () => {
@@ -151,7 +152,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("🟩 Item selecionado:", await viewer.IFC.getProperties(item.modelID, item.id, true));
     };
 
-    // Atalhos do teclado
     window.onkeydown = (event) => {
         if (event.code === 'KeyP') viewer.clipper.createPlane();
         else if (event.code === 'KeyO') viewer.clipper.deletePlane();
