@@ -1,15 +1,14 @@
 import { 
     Color, Scene, WebGLRenderer, PerspectiveCamera, 
     AmbientLight, DirectionalLight, Raycaster, Vector2,
-    Box3, Vector3, Group
+    Box3, Vector3
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { IFCLoader } from 'web-ifc-three';
 
 let scene, renderer, camera, controls;
 let currentModel = null;
-let selectedMesh = null;
-let meshMap = new Map(); // Mapeia expressID para array de meshes
+let selectedElement = null; // { expressID: number, meshes: THREE.Mesh[] }
 
 document.addEventListener('DOMContentLoaded', async () => {
     const container = document.getElementById('viewer-container');
@@ -26,14 +25,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
     
-    // 🔥 ORBIT CONTROLS - Navegação profissional
+    // Orbit Controls
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.screenSpacePanning = false;
-    controls.minDistance = 1;
-    controls.maxDistance = 1000;
-    controls.maxPolarAngle = Math.PI;
     
     // Luz
     scene.add(new AmbientLight(0xffffff, 0.6));
@@ -49,140 +44,145 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentModel = await ifcLoader.loadAsync('models/01.ifc');
     scene.add(currentModel);
     
-    // 🔥 ORGANIZA OS MESHES POR EXPRESS ID
-    organizeMeshesByExpressID(currentModel);
-    
     // Ajusta a câmera automaticamente
     fitCameraToObject(currentModel);
     
-    // Raycasting para seleção
-    setupRaycasting();
+    // 🔥 SETUP SIMPLIFICADO DE SELEÇÃO
+    setupSelection();
     
-    // 🔥 FUNÇÃO PARA ORGANIZAR MESHES POR ID
-    function organizeMeshesByExpressID(model) {
-        meshMap.clear();
-        
-        model.traverse((child) => {
-            if (child.isMesh && child.userData && child.userData.expressID) {
-                const expressID = child.userData.expressID;
-                
-                if (!meshMap.has(expressID)) {
-                    meshMap.set(expressID, []);
-                }
-                meshMap.get(expressID).push(child);
-                
-                // Marca o mesh para fácil identificação
-                child.userData.isIFCMesh = true;
-            }
-        });
-        
-        console.log(`🔹 Organizados ${meshMap.size} elementos únicos`);
-    }
-    
-    // 🔥 RAYCASTING CORRIGIDO
-    function setupRaycasting() {
+    function setupSelection() {
         const raycaster = new Raycaster();
         const mouse = new Vector2();
         
         container.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            
             const rect = container.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
             
             raycaster.setFromCamera(mouse, camera);
             
-            // 🔹 IMPORTANTE: Usa todos os meshes do modelo
-            const allMeshes = getAllMeshes();
-            const intersects = raycaster.intersectObjects(allMeshes, true);
+            // 🔹 MÉTODO DIRETO: Intersecta com o modelo inteiro
+            const intersects = raycaster.intersectObject(currentModel, true);
             
             if (intersects.length > 0) {
-                const selected = intersects[0].object;
-                const expressID = selected.userData?.expressID;
+                const clickedMesh = intersects[0].object;
+                const expressID = getExpressID(clickedMesh);
                 
                 if (expressID) {
                     selectElement(expressID);
                     console.log('✅ Elemento selecionado - ExpressID:', expressID);
+                } else {
+                    console.log('❌ Mesh sem expressID:', clickedMesh);
                 }
             } else {
+                console.log('❌ Nenhum mesh intersectado');
                 deselectElement();
             }
         });
     }
     
-    // 🔹 OBTÉM TODOS OS MESHES DO MODELO
-    function getAllMeshes() {
+    // 🔹 FUNÇÃO PARA OBTER EXPRESSID DE QUALQUER MESH
+    function getExpressID(mesh) {
+        // Procura o expressID no mesh ou em seus pais
+        let current = mesh;
+        while (current) {
+            if (current.userData && current.userData.expressID) {
+                return current.userData.expressID;
+            }
+            current = current.parent;
+        }
+        return null;
+    }
+    
+    // 🔹 SELECIONA ELEMENTO POR EXPRESSID
+    function selectElement(expressID) {
+        // Desseleciona anterior
+        deselectElement();
+        
+        // Encontra TODOS os meshes com este expressID
+        const elementMeshes = findAllMeshesByExpressID(expressID);
+        
+        if (elementMeshes.length === 0) {
+            console.log('❌ Nenhum mesh encontrado para expressID:', expressID);
+            return;
+        }
+        
+        // 🔹 DESTACA TODOS OS MESHES
+        elementMeshes.forEach(mesh => {
+            mesh.originalMaterial = mesh.material;
+            // Cria material destacado
+            mesh.material = mesh.material.clone();
+            mesh.material.emissive.setHex(0xFF0000); // Vermelho para destaque
+            mesh.material.emissiveIntensity = 0.3;
+        });
+        
+        selectedElement = { expressID, meshes: elementMeshes };
+        
+        // Feedback visual
+        updateSelectionInfo(expressID);
+        console.log(`🔹 Selecionado: ${expressID} (${elementMeshes.length} meshes)`);
+    }
+    
+    // 🔹 ENCONTRA TODOS OS MESHES COM MESMO EXPRESSID
+    function findAllMeshesByExpressID(expressID) {
         const meshes = [];
-        currentModel.traverse(child => {
-            if (child.isMesh && child.userData?.isIFCMesh) {
-                meshes.push(child);
+        currentModel.traverse((child) => {
+            if (child.isMesh) {
+                const childExpressID = getExpressID(child);
+                if (childExpressID === expressID) {
+                    meshes.push(child);
+                }
             }
         });
         return meshes;
     }
     
-    // 🔥 SELEÇÃO POR EXPRESS ID (TODO O ELEMENTO)
-    function selectElement(expressID) {
-        // Desseleciona anterior
-        deselectElement();
-        
-        // Encontra todos os meshes com este expressID
-        const elementMeshes = meshMap.get(expressID);
-        if (!elementMeshes) return;
-        
-        // 🔹 DESTACA TODOS OS MESHES DO ELEMENTO
-        elementMeshes.forEach(mesh => {
-            mesh.originalMaterial = mesh.material;
-            // Apenas muda a cor para destaque
-            mesh.material = mesh.material.clone();
-            mesh.material.emissive.setHex(0x444400); // Amarelo escuro para destaque
-        });
-        
-        selectedMesh = { expressID, meshes: elementMeshes };
-        
-        // Feedback visual
-        const infoDiv = document.getElementById('selection-info');
-        if (infoDiv) {
-            infoDiv.textContent = `Elemento selecionado (ID: ${expressID})`;
-            infoDiv.style.display = 'block';
-        }
-        
-        console.log(`🔹 Selecionado elemento ${expressID} com ${elementMeshes.length} meshes`);
-    }
-    
-    // 🔥 DESSELECIONA ELEMENTO
+    // 🔹 DESSELECIONA ELEMENTO
     function deselectElement() {
-        if (selectedMesh && selectedMesh.meshes) {
-            selectedMesh.meshes.forEach(mesh => {
+        if (selectedElement && selectedElement.meshes) {
+            selectedElement.meshes.forEach(mesh => {
                 if (mesh.originalMaterial) {
                     mesh.material = mesh.originalMaterial;
                 }
             });
         }
-        selectedMesh = null;
-        
-        const infoDiv = document.getElementById('selection-info');
-        if (infoDiv) infoDiv.style.display = 'none';
+        selectedElement = null;
+        updateSelectionInfo(null);
     }
     
-    // 🔥 OCULTAR SELECIONADO (AGORA OCULTA TODO O ELEMENTO)
+    // 🔹 ATUALIZA INFO DE SELEÇÃO NA TELA
+    function updateSelectionInfo(expressID) {
+        const infoDiv = document.getElementById('selection-info');
+        if (!infoDiv) return;
+        
+        if (expressID) {
+            infoDiv.textContent = `Elemento selecionado (ID: ${expressID})`;
+            infoDiv.style.display = 'block';
+        } else {
+            infoDiv.style.display = 'none';
+        }
+    }
+    
+    // 🔥 OCULTAR SELECIONADO
     function hideSelected() {
-        if (selectedMesh && selectedMesh.expressID) {
-            const elementMeshes = meshMap.get(selectedMesh.expressID);
+        if (selectedElement && selectedElement.expressID) {
+            const elementMeshes = selectedElement.meshes;
             
-            if (elementMeshes) {
-                elementMeshes.forEach(mesh => {
-                    mesh.visible = false;
-                });
-                
-                console.log(`🔹 Ocultado elemento ${selectedMesh.expressID} com ${elementMeshes.length} meshes`);
-                deselectElement();
-            }
+            elementMeshes.forEach(mesh => {
+                mesh.visible = false;
+            });
+            
+            console.log(`🔹 Ocultado elemento ${selectedElement.expressID}`);
+            deselectElement();
         } else {
             alert('Selecione um elemento primeiro (duplo clique)');
         }
     }
     
-    // 🔥 MOSTRAR TODOS OS ELEMENTOS
+    // 🔥 MOSTRAR TODOS
     function showAll() {
         if (currentModel) {
             currentModel.traverse(child => {
@@ -195,42 +195,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         deselectElement();
     }
     
-    // 🔥 AJUSTA CÂMERA PARA VISUALIZAR O MODELO
+    // 🔥 AJUSTA CÂMERA
     function fitCameraToObject(object) {
         const box = new Box3().setFromObject(object);
         const center = box.getCenter(new Vector3());
         const size = box.getSize(new Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
         
-        // Posiciona a câmera
         camera.position.copy(center);
         camera.position.z += maxDim * 2;
         controls.target.copy(center);
         controls.update();
         
-        console.log('📐 Câmera 3D ajustada para visualização completa');
+        console.log('📐 Câmera ajustada');
     }
     
-    // 🔥 CARREGAR NOVO ARQUIVO IFC
+    // 🔥 CARREGAR NOVO ARQUIVO
     async function loadNewIfc(url) {
-        // Remove modelo anterior
         if (currentModel) {
             scene.remove(currentModel);
-            meshMap.clear();
             deselectElement();
         }
         
-        // Carrega novo modelo
         currentModel = await ifcLoader.loadAsync(url);
         scene.add(currentModel);
-        
-        // Reorganiza os meshes
-        organizeMeshesByExpressID(currentModel);
-        
-        // Ajusta câmera
         fitCameraToObject(currentModel);
         
-        console.log('✅ Novo modelo IFC carregado');
+        console.log('✅ Novo modelo carregado');
     }
     
     // Conecta aos botões
@@ -252,7 +243,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Animação
     function animate() {
         requestAnimationFrame(animate);
-        controls.update(); // 🔹 IMPORTANTE: Atualiza controles
+        controls.update();
         renderer.render(scene, camera);
     }
     animate();
