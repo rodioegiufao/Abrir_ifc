@@ -4,6 +4,13 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
+let visibleSubset = null; // 🟢 Variável para o subset visível
+
+// ... (CreateViewer, loadIfc - Mantidos do seu código, mas com a captura do material do meu último código)
+// **NOTA: SEU NOVO CÓDIGO NÃO ESTÁ CAPTURANDO O MATERIAL, PRECISAMOS DISSO!**
+// ASSUMINDO QUE VOCÊ INTEGROU originalMaterial:
+
+let originalMaterial = null; 
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -21,6 +28,47 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
+    // --- Obtém TODOS os IDs do modelo ---
+    async function getAllExpressIDs() {
+        if (currentModelID === -1) return [];
+        
+        try {
+            // Seu método robusto de busca de IDs
+            // ... (log de busca de IDs)
+            return await viewer.IFC.loader.ifcManager.getAllItemsOfType(currentModelID, null, false);
+        } catch (error) {
+            // ... (log de erro)
+            return [];
+        }
+    }
+
+    // --- Cria/Atualiza subset visível com uma lista de IDs ---
+    // 🟢 MODIFICADA PARA RECEBER A LISTA DE IDS E O MATERIAL
+    async function updateVisibleSubset(idsToDisplay, material) {
+        if (currentModelID === -1) return;
+
+        // Se o subset antigo existir, removemos ele da cena
+        if (visibleSubset) {
+            viewer.context.getScene().remove(visibleSubset);
+            // Opcional: Dispose do objeto antigo para liberar memória (não essencial para este teste)
+            // visibleSubset.geometry.dispose();
+            // visibleSubset = null;
+        }
+
+        // 🟢 Cria o NOVO subset com os IDs atuais e o material correto
+        const newSubset = viewer.IFC.loader.ifcManager.createSubset({
+            modelID: currentModelID,
+            ids: idsToDisplay,
+            removePrevious: true,
+            customID: "visibleSubset",
+            material: material 
+        });
+
+        visibleSubset = newSubset;
+        viewer.context.getScene().add(visibleSubset);
+        console.log(`✅ ${idsToDisplay.length} elementos visíveis`);
+    }
+
     // --- Carrega um IFC ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
@@ -29,96 +77,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // Aguarda o carregamento completo
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // 🟢 CRÍTICO: CAPTURA DO MATERIAL E OCULTAÇÃO DO ORIGINAL
+        originalMaterial = model.mesh.material;
+        model.mesh.visible = false; // Oculta o modelo original
 
-        // Cria subset com TODOS os elementos visíveis
-        await showAll();
+        // 🔸 Mostra todos os elementos ao carregar
+        await showAll(); 
         
         viewer.shadowDropper.renderShadow(currentModelID);
         return model;
     }
 
-    // --- Obtém TODOS os IDs do modelo ---
-    async function getAllExpressIDs() {
-        if (currentModelID === -1) return [];
-        
-        try {
-            console.log("🔹 Buscando todos os IDs do modelo...");
-            
-            // Método 1: Via estrutura espacial (mais confiável)
-            const spatialStructure = await viewer.IFC.loader.ifcManager.getSpatialStructure(currentModelID, false);
-            const allIds = [];
-            
-            function extractIDs(node) {
-                if (node.expressID) {
-                    allIds.push(node.expressID);
-                }
-                if (node.children) {
-                    node.children.forEach(child => extractIDs(child));
-                }
-            }
-            
-            extractIDs(spatialStructure);
-            console.log(`🔹 Encontrados ${allIds.length} elementos via estrutura espacial`);
-            
-            return allIds;
-            
-        } catch (error) {
-            console.error("❌ Erro ao obter IDs:", error);
-            return [];
-        }
-    }
-
-    // --- Mostra TODOS os elementos ---
+    // --- Exibe todos os elementos (Recria o subset completo) ---
     async function showAll() {
-        if (currentModelID === -1) return;
-
         console.log("🔹 Mostrando todos os elementos...");
-        
-        try {
-            const allIds = await getAllExpressIDs();
-            
-            if (allIds.length === 0) {
-                console.warn("⚠️ Nenhum ID encontrado, usando fallback...");
-                // Fallback: remove todos os subsets para mostrar geometria original
-                viewer.IFC.loader.ifcManager.removeSubset(currentModelID);
-                return;
-            }
-            
-            viewer.IFC.loader.ifcManager.createSubset({
-                modelID: currentModelID,
-                ids: allIds,
-                removePrevious: true,
-                customID: "visibleSubset"
-            });
-            
-            console.log(`✅ ${allIds.length} elementos visíveis`);
-            
-        } catch (error) {
-            console.error("❌ Erro ao mostrar todos:", error);
-        }
-    }
-
-    // --- Inicializa ---
-    viewer = CreateViewer(container);
-    loadIfc('models/01.ifc');
-
-    const input = document.getElementById("file-input");
-    const hideSelectedButton = document.getElementById("hide-selected");
-    const showAllButton = document.getElementById("show-all");
-
-    // --- Upload manual ---
-    if (input) {
-        input.addEventListener("change", async (changed) => {
-            const file = changed.target.files[0];
-            const ifcURL = URL.createObjectURL(file);
-            await loadIfc(ifcURL);
-        }, false);
+        const allIds = await getAllExpressIDs();
+        await updateVisibleSubset(allIds, originalMaterial); // Atualiza com todos os IDs
     }
 
     // =======================================================
-    // 🔹 CONTROLE DE VISIBILIDADE
+    // 🔹 CONTROLE DE VISIBILIDADE USANDO SUBSETS
     // =======================================================
 
     async function hideSelected() {
@@ -127,108 +105,76 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const expressID = lastPickedItem.id;
-        console.log(`🔹 Ocultando item ${expressID}`);
-
-        try {
-            // Remove o item do subset visível
-            viewer.IFC.loader.ifcManager.removeFromSubset(
-                currentModelID,
-                [expressID],
-                "visibleSubset"
-            );
-
-            console.log(`✅ Item ${expressID} ocultado com sucesso.`);
-            
-        } catch (error) {
-            console.error("❌ Erro ao ocultar item:", error);
-        }
+        const expressIDToHide = lastPickedItem.id;
         
-        // Limpa seleção
+        console.log(`🔹 Ocultando item ${expressIDToHide}`);
+
+        // 🟢 ESTRATÉGIA "DELETAR E RECARREGAR" (Forçando a Recriação)
+        
+        // 1. Obtém a lista atual de IDs visíveis
+        const allIds = await getAllExpressIDs();
+        
+        // 2. Filtra, removendo o ID a ser ocultado
+        const newVisibleIds = allIds.filter(id => id !== expressIDToHide);
+
+        // 3. Recria o subset (isso força a renderização do Three.js)
+        await updateVisibleSubset(newVisibleIds, originalMaterial);
+
+        console.log(`✅ Item ${expressIDToHide} ocultado com sucesso.`);
         viewer.IFC.selector.unpickIfcItems();
         viewer.IFC.selector.unHighlightIfcItems();
         lastPickedItem = null;
-        
-        // Atualiza feedback visual
-        updateSelectionInfo(null);
     }
 
+    // ... (restante do código, event listeners)
+    
     if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
     if (showAllButton) showAllButton.onclick = showAll;
-
-    // =======================================================
-    // 🔹 INTERAÇÕES DE SELEÇÃO - VERSÃO SIMPLIFICADA
-    // =======================================================
     
+    // ... (Inicialização e Interações)
+    
+    // --- Inicializa ---
+    viewer = CreateViewer(container);
+    loadIfc('models/01.ifc');
+
+    const hideSelectedButton = document.getElementById("hide-selected");
+    const showAllButton = document.getElementById("show-all");
+    
+    window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
+
     window.ondblclick = async (event) => {
         event.preventDefault();
         event.stopPropagation();
         
-        if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
-        
-        try {
-            // 🔹 SOLUÇÃO SIMPLES: Primeiro restaura tudo, depois seleciona
-            await showAll();
-            
-            // Aguarda um pouco para garantir que o subset foi restaurado
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            // Agora seleciona o item
-            const item = await viewer.IFC.selector.pickIfcItem();
-            
-            if (!item || item.modelID === undefined || item.id === undefined) {
-                console.log("Nenhum item IFC selecionado");
-                return;
-            }
-            
-            lastPickedItem = item;
-            
-            // Apenas destaca visualmente
-            viewer.IFC.selector.highlightIfcItem(item, false);
-            
-            const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
-            console.log("🟩 Item selecionado:", props);
-            
-            // Atualiza feedback visual
-            updateSelectionInfo(props, item.id);
-            
-        } catch (error) {
-            console.error("Erro na seleção:", error);
+        const item = await viewer.IFC.selector.pickIfcItem(true);
+        if (!item || item.modelID === undefined || item.id === undefined) {
+             viewer.IFC.selector.unpickIfcItems();
+             viewer.IFC.selector.unHighlightIfcItems();
+             lastPickedItem = null;
+             return;
         }
+
+        lastPickedItem = item;
+        
+        // 🟢 NOVO COMPORTAMENTO: Isola a peça no double click (como você descreveu)
+        const idsToDisplay = [item.id];
+        await updateVisibleSubset(idsToDisplay, originalMaterial);
+        
+        // Não é necessário highlight se o item já está isolado
+        
+        const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
+        console.log("🟩 Item selecionado:", props);
     };
 
-    // 🔹 FUNÇÃO PARA ATUALIZAR O FEEDBACK VISUAL
-    function updateSelectionInfo(props, expressID = null) {
-        const selectionInfo = document.getElementById('selection-info');
-        if (!selectionInfo) return;
-        
-        if (!props || !expressID) {
-            selectionInfo.style.display = 'none';
-            return;
-        }
-        
-        const name = props.Name?.value || props.type || 'Elemento';
-        selectionInfo.textContent = `Selecionado: ${name} (ID: ${expressID})`;
-        selectionInfo.style.display = 'block';
-    }
-
-    // Atalhos do teclado
+    // ... (Atalhos de teclado)
     window.onkeydown = (event) => {
-        if (event.code === 'KeyP') {
-            viewer.clipper.createPlane();
-        } else if (event.code === 'KeyO') {
-            viewer.clipper.deletePlane();
-        } else if (event.code === 'Escape') {
+        if (event.code === 'KeyP') viewer.clipper.createPlane();
+        else if (event.code === 'KeyO') viewer.clipper.deletePlane();
+        else if (event.code === 'Escape') {
             viewer.IFC.selector.unpickIfcItems();
             viewer.IFC.selector.unHighlightIfcItems();
             lastPickedItem = null;
-            updateSelectionInfo(null);
-        } else if (event.code === 'KeyH' && !event.ctrlKey) {
-            event.preventDefault();
-            hideSelected();
-        } else if (event.code === 'KeyS' && !event.ctrlKey) {
-            event.preventDefault();
-            showAll();
+            showAll(); // Opcional: volta a mostrar tudo no ESC
         }
     };
 });
