@@ -1,10 +1,19 @@
-import { Color } from 'three';
+import { Color, MeshLambertMaterial } from 'three'; // 🔴 NOVO: Importa MeshLambertMaterial
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
 let visibleSubset = null; 
+
+// 🔴 ESTRATÉGIA FINAL: Define um material simples Three.js
+const DEFAULT_MATERIAL = new MeshLambertMaterial({
+    color: new Color(0xaaaaaa), // Cinza claro
+    side: 2, // Garante que a renderização de faces internas funcione
+    transparent: true,
+    opacity: 0.9 
+});
+
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -41,17 +50,16 @@ document.addEventListener('DOMContentLoaded', () => {
             false
         );
 
-        // O 'createSubset' cria o objeto Three.js (a nova malha de visualização)
         const subset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset",
-            // 🟢 PASSO 2: Garante o material correto
-            material: model.mesh.material 
+            // 🔴 CORREÇÃO FINAL: Força o material Three.js simples
+            material: DEFAULT_MATERIAL 
         });
 
-        // 🟢 PASSO 3: Armazena o subset criado na variável global
+        // 🟢 PASSO 3: Atribui o subset criado
         visibleSubset = subset; 
 
         // 🔸 Adiciona o subset visível à cena
@@ -91,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const expressID = lastPickedItem.id;
         
-        // 🟢 PASSO 4: Oculta o item removendo-o da malha de visualização (visibleSubset)
+        // Oculta o item removendo-o da malha de visualização
         viewer.IFC.loader.ifcManager.removeFromSubset(
             currentModelID,
             [expressID],
@@ -112,15 +120,13 @@ document.addEventListener('DOMContentLoaded', () => {
             false
         );
 
-        const model = viewer.IFC.get(); 
-
-        // Recria o subset completo
+        // Recria o subset completo com o material simples
         visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset",
-            material: model.mesh.material 
+            material: DEFAULT_MATERIAL // 🔴 USANDO MATERIAL SIMPLES
         });
 
         if (!viewer.context.getScene().children.includes(visibleSubset)) {
