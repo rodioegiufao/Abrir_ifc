@@ -1,191 +1,265 @@
-// index.js (Lógica Three.js Pura)
+import { Color, Scene, WebGLRenderer, PerspectiveCamera, AmbientLight, DirectionalLight } from 'three';
+import { IFCLoader } from 'web-ifc-three';
 
-import { Color } from 'three';
-import { IfcViewerAPI } from 'web-ifc-viewer';
-
-let viewer;
-let currentModelID = -1;
-let lastPickedItem = null;
-let visibleSubset = null; 
-let originalModelMesh = null; // Armazena a malha Three.js do modelo IFC
-let allExpressIDs = []; // Armazena TODOS os IDs visíveis
-let hiddenIDs = new Set(); // Conjunto de IDs ocultos
+let scene, renderer, camera, ifcLoader;
+let currentModel = null;
+let allMeshes = []; // Array para armazenar todos os meshes
+let selectedMesh = null;
 
 document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
-
-    function CreateViewer(container) {
-        const newViewer = new IfcViewerAPI({
-            container,
-            backgroundColor: new Color(0xeeeeee)
-        });
-        newViewer.axes.setAxes();
-        newViewer.grid.setGrid();
-        newViewer.clipper.active = true;
-        return newViewer;
-    }
-
-    // --- Recria a malha visível usando a API Three.js (Subsets forçados) ---
-    async function updateVisibleSubset() {
-        if (!originalModelMesh) return;
-        
-        // 1. Pega todos os IDs que DEVERIAM estar visíveis
-        const visibleIDs = allExpressIDs.filter(id => !hiddenIDs.has(id));
-
-        // 2. CRÍTICO: Usa a API de Subsets (que é a única forma de manipular a geometria carregada)
-        // Se a lista de IDs visíveis for o modelo inteiro, ele recria o subset completo.
-        // Se a lista for menor, ele cria um subset sem os IDs ocultos.
-        
-        // Oculta o modelo original
-        originalModelMesh.visible = false;
-
-        // Limpa o subset anterior (se existir)
-        if (visibleSubset) {
-            viewer.context.getScene().remove(visibleSubset);
-            // IMPORTANTE: Dispor do subset antigo pode ser necessário para liberar memória
-            // mas vamos focar na lógica por enquanto.
-        }
-
-        if (visibleIDs.length === 0) {
-            console.log("Nenhum elemento visível. Subset limpo.");
-            visibleSubset = null;
-            return;
-        }
-        
-        // 3. RECRIAR O SUBSET COM APENAS OS IDS VISÍVEIS
-        // Esta é a única forma de "deletar temporariamente" a geometria no web-ifc-viewer.
-        const material = originalModelMesh.material; 
-        
-        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
-            modelID: currentModelID,
-            ids: visibleIDs,
-            removePrevious: true,
-            customID: "visibleSubset", // Reusa o ID para que o IFC saiba que é o mesmo objeto
-            material: material 
-        });
-
-        viewer.context.getScene().add(visibleSubset);
-        console.log(`✅ ${visibleIDs.length} elementos visíveis`);
-    }
-
-    // --- Carrega um IFC ---
-    async function loadIfc(url) {
-        if (viewer) await viewer.dispose();
-        viewer = CreateViewer(container);
-        await viewer.IFC.setWasmPath("/wasm/");
-        const model = await viewer.IFC.loadIfcUrl(url);
-        currentModelID = model.modelID;
-        
-        originalModelMesh = model.mesh; // Armazena a malha Three.js
-
-        // Preenche a lista de todos os IDs (só faz uma vez)
-        allExpressIDs = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
-            currentModelID,
-            null,
-            false
-        );
-        hiddenIDs.clear(); // Garante que nada está oculto no início
-
-        await updateVisibleSubset();
-        
-        viewer.shadowDropper.renderShadow(currentModelID);
-        return model;
-    }
-
-    // --- Lógica de Ocultar/Exibir ---
-
-    async function hideSelected() {
-        if (!lastPickedItem || currentModelID === -1) {
-            alert("Nenhum item selecionado. Dê um duplo clique para selecionar primeiro.");
-            return;
-        }
-
-        const expressID = lastPickedItem.id;
-        
-        if (hiddenIDs.has(expressID)) {
-            console.log(`🔹 Item ${expressID} já está oculto.`);
-            return;
-        }
-        
-        hiddenIDs.add(expressID); // Adiciona ID à lista de ocultos
-        await updateVisibleSubset(); // Recria a malha visível
-
-        console.log(`✅ Item ${expressID} ocultado com sucesso.`);
-        viewer.IFC.selector.unpickIfcItems();
-        viewer.IFC.selector.unHighlightIfcItems();
-        lastPickedItem = null;
-    }
-
-    async function showAll() {
-        hiddenIDs.clear(); // Limpa a lista de ocultos
-        await updateVisibleSubset(); // Recria a malha completa
-        console.log(`🔹 Todos os elementos foram exibidos novamente.`);
-    }
     
-    // --- Lógica de Isolamento (Duplo Clique) ---
-    // Este é o comportamento que você descreveu: ao clicar, isola.
-    async function isolateSelected() {
-        if (!lastPickedItem || currentModelID === -1) return;
+    // --- Inicializa Three.js Scene ---
+    function initThreeJS() {
+        // Cena
+        scene = new Scene();
+        scene.background = new Color(0xeeeeee);
         
-        const expressID = lastPickedItem.id;
-
-        // Encontra todos os IDs que NÃO são o selecionado
-        const idsToHide = allExpressIDs.filter(id => id !== expressID);
+        // Câmera
+        camera = new PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(10, 10, 10);
+        camera.lookAt(0, 0, 0);
         
-        // Adiciona todos para ocultar e recria o subset
-        hiddenIDs = new Set(idsToHide);
-        await updateVisibleSubset();
+        // Renderer
+        renderer = new WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
         
-        console.log(`✅ Item ${expressID} isolado.`)
-        viewer.IFC.selector.unHighlightIfcItems();
+        // Iluminação
+        const ambientLight = new AmbientLight(0x404040, 0.6);
+        scene.add(ambientLight);
+        
+        const directionalLight = new DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 20, 15);
+        scene.add(directionalLight);
+        
+        // IFC Loader
+        ifcLoader = new IFCLoader();
+        ifcLoader.ifcManager.setWasmPath('/wasm/');
+        
+        // Animação
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+        
+        // Redimensionamento
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
     }
 
+    // --- Carrega IFC ---
+    async function loadIfc(url) {
+        // Remove modelo anterior se existir
+        if (currentModel) {
+            scene.remove(currentModel);
+            allMeshes = [];
+        }
+        
+        // Carrega novo modelo
+        currentModel = await ifcLoader.loadAsync(url);
+        scene.add(currentModel);
+        
+        // Coleta todos os meshes do modelo
+        collectAllMeshes(currentModel);
+        
+        console.log(`✅ Modelo carregado com ${allMeshes.length} meshes`);
+        
+        // Ajusta a câmera para visualizar o modelo
+        fitCameraToObject(currentModel);
+        
+        return currentModel;
+    }
+
+    // --- Coleta todos os meshes recursivamente ---
+    function collectAllMeshes(object) {
+        object.traverse((child) => {
+            if (child.isMesh) {
+                allMeshes.push(child);
+                // Armazena o expressID se disponível
+                if (child.userData && child.userData.expressID) {
+                    console.log(`🔹 Mesh encontrado: ${child.userData.expressID}`);
+                }
+            }
+        });
+    }
+
+    // --- Ajusta câmera para visualizar objeto ---
+    function fitCameraToObject(object) {
+        const box = new Box3().setFromObject(object);
+        const center = box.getCenter(new Vector3());
+        const size = box.getSize(new Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / Math.sin(fov / 2));
+        
+        camera.position.set(center.x, center.y, center.z + cameraZ);
+        camera.lookAt(center);
+    }
+
+    // --- Seleciona mesh por raycasting ---
+    function setupRaycasting() {
+        const raycaster = new Raycaster();
+        const mouse = new Vector2();
+        
+        container.addEventListener('dblclick', (event) => {
+            // Calcula posição do mouse normalizada
+            const rect = container.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
+            
+            // Raycasting
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(allMeshes, true);
+            
+            if (intersects.length > 0) {
+                const selected = intersects[0].object;
+                selectMesh(selected);
+            } else {
+                deselectMesh();
+            }
+        });
+    }
+
+    // --- Seleciona um mesh ---
+    function selectMesh(mesh) {
+        // Desseleciona anterior
+        deselectMesh();
+        
+        // Seleciona novo
+        selectedMesh = mesh;
+        
+        // Destaca visualmente (muda cor)
+        mesh.originalMaterial = mesh.material;
+        mesh.material = new MeshPhongMaterial({ 
+            color: 0xff0000, 
+            emissive: 0x440000 
+        });
+        
+        console.log(`🟩 Mesh selecionado:`, mesh);
+        
+        // Mostra informações
+        showMeshInfo(mesh);
+    }
+
+    // --- Desseleciona mesh ---
+    function deselectMesh() {
+        if (selectedMesh && selectedMesh.originalMaterial) {
+            selectedMesh.material = selectedMesh.originalMaterial;
+        }
+        selectedMesh = null;
+        hideMeshInfo();
+    }
+
+    // --- OCULTAR SELECIONADO (SIMPLES E DIRETO) ---
+    function hideSelected() {
+        if (!selectedMesh) {
+            alert("Nenhum mesh selecionado. Dê um duplo clique para selecionar primeiro.");
+            return;
+        }
+        
+        console.log(`🔹 Ocultando mesh:`, selectedMesh);
+        selectedMesh.visible = false;
+        
+        // Remove da lista de meshes visíveis
+        allMeshes = allMeshes.filter(mesh => mesh !== selectedMesh);
+        
+        deselectMesh();
+        console.log(`✅ Mesh ocultado com sucesso`);
+    }
+
+    // --- MOSTRAR TODOS ---
+    function showAll() {
+        // Restaura visibilidade de TODOS os meshes
+        currentModel.traverse((child) => {
+            if (child.isMesh) {
+                child.visible = true;
+            }
+        });
+        
+        // Recarrega lista de meshes
+        allMeshes = [];
+        collectAllMeshes(currentModel);
+        
+        deselectMesh();
+        console.log(`✅ Todos os ${allMeshes.length} meshes visíveis`);
+    }
+
+    // --- Informações do mesh ---
+    function showMeshInfo(mesh) {
+        const infoDiv = document.getElementById('selection-info') || createInfoDiv();
+        let info = `Mesh selecionado`;
+        
+        if (mesh.userData && mesh.userData.expressID) {
+            info += ` (ID: ${mesh.userData.expressID})`;
+        }
+        
+        infoDiv.textContent = info;
+        infoDiv.style.display = 'block';
+    }
+
+    function hideMeshInfo() {
+        const infoDiv = document.getElementById('selection-info');
+        if (infoDiv) infoDiv.style.display = 'none';
+    }
+
+    function createInfoDiv() {
+        const div = document.createElement('div');
+        div.id = 'selection-info';
+        div.style.cssText = `
+            position: fixed; 
+            top: 10px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            background: rgba(0,0,0,0.8); 
+            color: white; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            z-index: 1000; 
+            font-family: Arial, sans-serif;
+        `;
+        document.body.appendChild(div);
+        return div;
+    }
 
     // --- Inicialização ---
-    viewer = CreateViewer(container);
+    initThreeJS();
+    setupRaycasting();
+    
+    // Carrega modelo inicial
     loadIfc('models/01.ifc');
 
-    // ... (Conexão de botões omitida para brevidade, mas deve ser mantida)
+    // Controles da UI
+    const input = document.getElementById("file-input");
     const hideSelectedButton = document.getElementById("hide-selected");
     const showAllButton = document.getElementById("show-all");
+
+    if (input) {
+        input.addEventListener("change", async (changed) => {
+            const file = changed.target.files[0];
+            const ifcURL = URL.createObjectURL(file);
+            await loadIfc(ifcURL);
+        });
+    }
+
     if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
     if (showAllButton) showAllButton.onclick = showAll;
 
-    // =======================================================
-    // 🔹 INTERAÇÕES DE SELEÇÃO E ISOLAMENTO
-    // =======================================================
-    window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
-    
-    window.ondblclick = async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        
-        const item = await viewer.IFC.selector.pickIfcItem(true);
-
-        if (!item || item.modelID === undefined || item.id === undefined) {
-             showAll(); // Se clicar fora, exibe tudo
-             return;
-        }
-
-        lastPickedItem = item;
-        
-        // ❌ AQUI ESTÁ O ISOLAMENTO QUE VOCÊ NOTOU
-        await isolateSelected();
-
-        const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
-        console.log("🟩 Item selecionado:", props);
-    };
-
-    // ... (Atalhos de teclado)
+    // Atalhos
     window.onkeydown = (event) => {
-        if (event.code === 'KeyP') viewer.clipper.createPlane();
-        else if (event.code === 'KeyO') viewer.clipper.deletePlane();
-        else if (event.code === 'Escape') {
-            viewer.IFC.selector.unpickIfcItems();
-            viewer.IFC.selector.unHighlightIfcItems();
-            lastPickedItem = null;
-            showAll(); // Exibe tudo ao pressionar ESC
+        if (event.code === 'Escape') deselectMesh();
+        else if (event.code === 'KeyH' && !event.ctrlKey) {
+            event.preventDefault();
+            hideSelected();
+        }
+        else if (event.code === 'KeyS' && !event.ctrlKey) {
+            event.preventDefault();
+            showAll();
         }
     };
 });
