@@ -32,9 +32,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Aguarda o carregamento completo
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // 🔹 DESATIVA COMPLETAMENTE o comportamento automático de subsets
-        viewer.IFC.selector.autoPickOnMouseMove = false;
-        
         // Cria subset com TODOS os elementos visíveis
         await showAll();
         
@@ -160,10 +157,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (showAllButton) showAllButton.onclick = showAll;
 
     // =======================================================
-    // 🔹 INTERAÇÕES DE SELEÇÃO - COMPLETAMENTE CORRIGIDAS
+    // 🔹 INTERAÇÕES DE SELEÇÃO - VERSÃO SIMPLIFICADA
     // =======================================================
     
-    // 🔹 SOLUÇÃO DEFINITIVA: Substituir completamente o double click handler
     window.ondblclick = async (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -171,7 +167,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
         
         try {
-            // 🔹 MÉTODO ALTERNATIVO: Usar pickIfcItem com configuração específica
+            // 🔹 SOLUÇÃO SIMPLES: Primeiro restaura tudo, depois seleciona
+            await showAll();
+            
+            // Aguarda um pouco para garantir que o subset foi restaurado
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Agora seleciona o item
             const item = await viewer.IFC.selector.pickIfcItem();
             
             if (!item || item.modelID === undefined || item.id === undefined) {
@@ -181,11 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             lastPickedItem = item;
             
-            // 🔹 IMPORTANTE: Remove qualquer subset criado automaticamente
-            // e restaura o subset completo imediatamente
-            await showAll();
-            
-            // Apenas destaca visualmente o item selecionado
+            // Apenas destaca visualmente
             viewer.IFC.selector.highlightIfcItem(item, false);
             
             const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
@@ -233,18 +231,4 @@ document.addEventListener('DOMContentLoaded', () => {
             showAll();
         }
     };
-
-    // 🔹 PREVENÇÃO ADICIONAL: Remove qualquer subset automático periodicamente
-    setInterval(() => {
-        if (viewer && currentModelID !== -1) {
-            // Verifica se há subsets não autorizados e os remove
-            const subsets = viewer.IFC.loader.ifcManager.subsets;
-            Object.keys(subsets).forEach(key => {
-                if (key !== "visibleSubset") {
-                    console.log(`🔹 Removendo subset não autorizado: ${key}`);
-                    viewer.IFC.loader.ifcManager.removeSubset(currentModelID, key);
-                }
-            });
-        }
-    }, 1000); // Verifica a cada segundo
 });
