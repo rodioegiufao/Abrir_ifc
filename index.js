@@ -30,9 +30,9 @@ document.addEventListener('DOMContentLoaded', () => {
         currentModelID = model.modelID;
 
         // Aguarda o carregamento completo
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Método mais confiável para obter todos os IDs
+        // Cria subset visível
         await createVisibleSubset();
         
         viewer.shadowDropper.renderShadow(currentModelID);
@@ -44,23 +44,88 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentModelID === -1) return;
         
         try {
-            // Método alternativo: obtém IDs de diferentes tipos comuns
-            const commonTypes = [
-                1,  // IfcProject
-                2,  // IfcSite  
-                3,  // IfcBuilding
-                4,  // IfcBuildingStorey
-                5,  // IfcSpace
-                106, // IfcWall
-                108, // IfcSlab
-                109, // IfcBeam
-                110, // IfcColumn
-                111, // IfcDoor
-                112, // IfcWindow
-                113, // IfcPlate
-            ];
+            console.log("🔹 Criando subset visível...");
             
-            let allIds = [];
+            // Método DIRETO: obtém TODOS os elementos do modelo
+            // O tipo 1 geralmente representa IfcRoot, que é base para quase tudo
+            const allIds = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
+                currentModelID,
+                1, // IfcRoot - deve pegar a maioria dos elementos
+                false
+            );
+            
+            console.log(`🔹 Encontrados ${allIds.length} elementos`);
+            
+            // Se não encontrou muitos elementos, tenta outros tipos comuns
+            if (allIds.length < 10) {
+                console.log("🔹 Poucos elementos encontrados, tentando tipos específicos...");
+                
+                const additionalTypes = [2, 3, 4, 5, 106, 108, 109, 110, 111, 112, 113];
+                let additionalIds = [];
+                
+                for (const type of additionalTypes) {
+                    try {
+                        const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
+                            currentModelID,
+                            type,
+                            false
+                        );
+                        additionalIds = [...additionalIds, ...ids];
+                        console.log(`🔹 Tipo ${type}: ${ids.length} elementos`);
+                    } catch (e) {
+                        // Tipo não existe, continua
+                    }
+                }
+                
+                // Combina todos os IDs, removendo duplicatas
+                const combinedIds = [...new Set([...allIds, ...additionalIds])];
+                console.log(`🔹 Total combinado: ${combinedIds.length} elementos`);
+                
+                viewer.IFC.loader.ifcManager.createSubset({
+                    modelID: currentModelID,
+                    ids: combinedIds,
+                    removePrevious: true,
+                    customID: "visibleSubset"
+                });
+            } else {
+                // Usa os IDs encontrados
+                viewer.IFC.loader.ifcManager.createSubset({
+                    modelID: currentModelID,
+                    ids: allIds,
+                    removePrevious: true,
+                    customID: "visibleSubset"
+                });
+            }
+            
+            console.log("✅ Subset visível criado com sucesso");
+            
+        } catch (error) {
+            console.error("❌ Erro ao criar subset:", error);
+            
+            // Método de emergência: tenta criar subset vazio e adicionar gradualmente
+            await emergencySubsetCreation();
+        }
+    }
+
+    // --- Método de emergência para criação de subset ---
+    async function emergencySubsetCreation() {
+        console.log("🔹 Usando método de emergência para subset...");
+        
+        try {
+            // Cria um subset vazio primeiro
+            viewer.IFC.loader.ifcManager.createSubset({
+                modelID: currentModelID,
+                ids: [],
+                removePrevious: true,
+                customID: "visibleSubset"
+            });
+            
+            // Tenta adicionar elementos gradualmente por tipos conhecidos
+            const commonTypes = [
+                1, 2, 3, 4, 5,    // Estrutura organizacional
+                106, 108, 109, 110, 111, 112, 113, // Elementos de construção
+                115, 116, 117, 118, 119, 120 // Mais tipos comuns
+            ];
             
             for (const type of commonTypes) {
                 try {
@@ -69,40 +134,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         type,
                         false
                     );
-                    allIds = [...allIds, ...ids];
-                } catch (e) {
-                    // Tipo pode não existir no modelo, continua
-                    console.log(`Tipo ${type} não encontrado`);
-                }
-            }
-            
-            // Alternativa: se ainda estiver vazio, tenta método direto
-            if (allIds.length === 0) {
-                console.warn("Método por tipos falhou, tentando abordagem alternativa...");
-                
-                // Usa a geometria carregada para obter IDs
-                const mesh = viewer.IFC.loader.ifcManager.getMesh(currentModelID);
-                if (mesh && mesh.geometry) {
-                    // Obtém IDs dos atributos de geometria
-                    const attributes = mesh.geometry.attributes;
-                    if (attributes && attributes.expressID) {
-                        const expressIDs = attributes.expressID.array;
-                        allIds = [...new Set(expressIDs)]; // Remove duplicatas
+                    
+                    if (ids.length > 0) {
+                        viewer.IFC.loader.ifcManager.addToSubset(
+                            currentModelID,
+                            ids,
+                            "visibleSubset"
+                        );
+                        console.log(`🔹 Adicionados ${ids.length} elementos do tipo ${type}`);
                     }
+                } catch (e) {
+                    // Ignora erros de tipos não encontrados
                 }
             }
-            
-            console.log(`🔹 Criando subset com ${allIds.length} elementos`);
-            
-            viewer.IFC.loader.ifcManager.createSubset({
-                modelID: currentModelID,
-                ids: allIds,
-                removePrevious: true,
-                customID: "visibleSubset"
-            });
             
         } catch (error) {
-            console.error("Erro ao criar subset:", error);
+            console.error("❌ Método de emergência também falhou:", error);
         }
     }
 
@@ -124,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 CONTROLE DE VISIBILIDADE USANDO SUBSETS (CORRIGIDO)
+    // 🔹 CONTROLE DE VISIBILIDADE CORRIGIDO
     // =======================================================
 
     async function hideSelected() {
@@ -137,13 +184,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`🔹 Tentando ocultar item ${expressID}`);
 
         try {
-            // Verifica se o subset existe antes de remover
-            const subset = viewer.IFC.loader.ifcManager.subsets["visibleSubset"];
-            if (!subset) {
-                console.warn("Subset 'visibleSubset' não encontrado, criando...");
-                await createVisibleSubset();
-            }
-
             // Remove o item do subset visível
             viewer.IFC.loader.ifcManager.removeFromSubset(
                 currentModelID,
@@ -153,70 +193,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             console.log(`✅ Item ${expressID} ocultado com sucesso.`);
             
-            // Força atualização da cena
-            viewer.context.renderer.render();
-            
         } catch (error) {
-            console.error("Erro ao ocultar item:", error);
-            
-            // Fallback: tenta método alternativo
-            await hideSelectedFallback(expressID);
+            console.error("❌ Erro ao ocultar item:", error);
+            alert("Erro ao ocultar item. Verifique o console.");
         }
         
         viewer.IFC.selector.unpickIfcItems();
+        viewer.IFC.selector.unHighlightIfcItems();
         lastPickedItem = null;
-    }
-
-    // --- Método alternativo caso o principal falhe ---
-    async function hideSelectedFallback(expressID) {
-        console.log("🔹 Tentando método alternativo para ocultar...");
-        
-        try {
-            // Método direto: manipula a visibilidade do mesh
-            const mesh = viewer.IFC.loader.ifcManager.getMesh(currentModelID);
-            if (mesh) {
-                // Encontra a geometria correspondente ao expressID
-                mesh.visible = false;
-                
-                // Cria um subset sem o elemento oculto
-                const allIds = await getAllExpressIDs();
-                const filteredIds = allIds.filter(id => id !== expressID);
-                
-                viewer.IFC.loader.ifcManager.createSubset({
-                    modelID: currentModelID,
-                    ids: filteredIds,
-                    removePrevious: true,
-                    customID: "visibleSubset"
-                });
-                
-                console.log(`✅ Item ${expressID} ocultado (método alternativo).`);
-            }
-        } catch (error) {
-            console.error("Método alternativo também falhou:", error);
-        }
-    }
-
-    // --- Obtém todos os ExpressIDs do modelo ---
-    async function getAllExpressIDs() {
-        try {
-            // Tenta obter via API do ifcManager
-            const spatialStructure = await viewer.IFC.loader.ifcManager.getSpatialStructure(currentModelID);
-            const allIds = [];
-            
-            function collectIDs(item) {
-                if (item.expressID) allIds.push(item.expressID);
-                if (item.children) {
-                    item.children.forEach(child => collectIDs(child));
-                }
-            }
-            
-            collectIDs(spatialStructure);
-            return allIds;
-            
-        } catch (error) {
-            console.error("Erro ao obter ExpressIDs:", error);
-            return [];
-        }
     }
 
     async function showAll() {
@@ -226,44 +210,61 @@ document.addEventListener('DOMContentLoaded', () => {
         
         await createVisibleSubset();
         console.log(`✅ Todos os elementos foram exibidos novamente.`);
-        
-        // Força atualização da cena
-        viewer.context.renderer.render();
     }
 
     if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
     if (showAllButton) showAllButton.onclick = showAll;
 
     // =======================================================
-    // 🔹 INTERAÇÕES DE SELEÇÃO
+    // 🔹 INTERAÇÕES DE SELEÇÃO (CORRIGIDAS)
     // =======================================================
-    window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
+    
+    // IMPORTANTE: Corrigindo o problema de seleção que oculta outros elementos
+    window.onmousemove = () => {
+        if (viewer && viewer.IFC && viewer.IFC.selector) {
+            viewer.IFC.selector.prePickIfcItem();
+        }
+    };
 
-    window.ondblclick = async () => {
+    window.ondblclick = async (event) => {
+        // Previne comportamento padrão que pode interferir
+        event.preventDefault();
+        event.stopPropagation();
+        
+        if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
+        
         const item = await viewer.IFC.selector.pickIfcItem(true);
-        if (!item || item.modelID === undefined || item.id === undefined) return;
+        if (!item || item.modelID === undefined || item.id === undefined) {
+            console.log("Nenhum item IFC selecionado");
+            return;
+        }
+        
         lastPickedItem = item;
+        
+        // Apenas destaca, NÃO modifica subsets
+        viewer.IFC.selector.highlightIfcItem(item, false);
         
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         console.log("🟩 Item selecionado:", props);
-        
-        // Destaca visualmente o item selecionado
-        viewer.IFC.selector.highlightIfcItem(item, false);
     };
 
     // Atalhos do teclado
     window.onkeydown = (event) => {
-        if (event.code === 'KeyP') viewer.clipper.createPlane();
-        else if (event.code === 'KeyO') viewer.clipper.deletePlane();
-        else if (event.code === 'Escape') {
+        if (event.code === 'KeyP') {
+            viewer.clipper.createPlane();
+        } else if (event.code === 'KeyO') {
+            viewer.clipper.deletePlane();
+        } else if (event.code === 'Escape') {
             viewer.IFC.selector.unpickIfcItems();
             viewer.IFC.selector.unHighlightIfcItems();
             lastPickedItem = null;
-        } else if (event.code === 'KeyH') {
+        } else if (event.code === 'KeyH' && !event.ctrlKey) {
             // Atalho para ocultar (H)
+            event.preventDefault();
             hideSelected();
-        } else if (event.code === 'KeyS') {
+        } else if (event.code === 'KeyS' && !event.ctrlKey) {
             // Atalho para mostrar tudo (S)
+            event.preventDefault();
             showAll();
         }
     };
