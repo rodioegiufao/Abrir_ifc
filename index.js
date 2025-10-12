@@ -4,8 +4,6 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
-let visibleSubset = null; // Armazenará o subset atual visível
-let originalMaterial = null; // 🟢 NOVO: Variável para armazenar o material IFC
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -13,7 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Cria o viewer ---
     function CreateViewer(container) {
-        // ... (código CreateViewer idêntico)
         const newViewer = new IfcViewerAPI({
             container,
             backgroundColor: new Color(0xeeeeee)
@@ -24,53 +21,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Cria subset visível com todos os elementos ---
-    // 🟢 AGORA RECEBE O MATERIAL COMO PARÂMETRO
-    async function createVisibleSubset(material) {
-        if (currentModelID === -1) return;
-        
-        try {
-            console.log("🔹 Criando subset visível...");
-            
-            // Método universal para obter todos os IDs
-            const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
-                currentModelID,
-                null, // Tipo nulo busca todos
-                false
-            );
-
-            console.log(`🔹 Encontrados ${ids.length} elementos`);
-            
-            if (ids.length === 0) {
-                 console.error("ERRO CRÍTICO: Não foi possível obter IDs da geometria.");
-                 return;
-            }
-
-            // 🟢 CRÍTICO: Passa o material para o subset
-            const subset = viewer.IFC.loader.ifcManager.createSubset({
-                modelID: currentModelID,
-                ids,
-                removePrevious: true,
-                customID: "visibleSubset",
-                material: material 
-            });
-
-            visibleSubset = subset;
-            
-            // Garante que o objeto está na cena
-            if (!viewer.context.getScene().children.includes(visibleSubset)) {
-                viewer.context.getScene().add(visibleSubset);
-            }
-
-            console.log("✅ Subset visível criado com sucesso");
-            return subset;
-
-        } catch (error) {
-            console.error("Erro ao criar subset visível:", error);
-        }
-    }
-
-
     // --- Carrega um IFC ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
@@ -79,20 +29,100 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // 🟢 CRÍTICO: Armazena o material original antes de ocultar
-        originalMaterial = model.mesh.material;
+        // Aguarda o carregamento completo
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // 🔸 Oculta o modelo original
-        model.mesh.visible = false;
+        // 🔹 DESATIVA COMPLETAMENTE o comportamento automático de subsets
+        viewer.IFC.selector.autoPickOnMouseMove = false;
         
-        // Cria subset visível (agora passando o material)
-        await createVisibleSubset(originalMaterial);
+        // Cria subset com TODOS os elementos visíveis
+        await showAll();
         
         viewer.shadowDropper.renderShadow(currentModelID);
         return model;
     }
 
-    // --- Lógica de Ocultar/Exibir ---
+    // --- Obtém TODOS os IDs do modelo ---
+    async function getAllExpressIDs() {
+        if (currentModelID === -1) return [];
+        
+        try {
+            console.log("🔹 Buscando todos os IDs do modelo...");
+            
+            // Método 1: Via estrutura espacial (mais confiável)
+            const spatialStructure = await viewer.IFC.loader.ifcManager.getSpatialStructure(currentModelID, false);
+            const allIds = [];
+            
+            function extractIDs(node) {
+                if (node.expressID) {
+                    allIds.push(node.expressID);
+                }
+                if (node.children) {
+                    node.children.forEach(child => extractIDs(child));
+                }
+            }
+            
+            extractIDs(spatialStructure);
+            console.log(`🔹 Encontrados ${allIds.length} elementos via estrutura espacial`);
+            
+            return allIds;
+            
+        } catch (error) {
+            console.error("❌ Erro ao obter IDs:", error);
+            return [];
+        }
+    }
+
+    // --- Mostra TODOS os elementos ---
+    async function showAll() {
+        if (currentModelID === -1) return;
+
+        console.log("🔹 Mostrando todos os elementos...");
+        
+        try {
+            const allIds = await getAllExpressIDs();
+            
+            if (allIds.length === 0) {
+                console.warn("⚠️ Nenhum ID encontrado, usando fallback...");
+                // Fallback: remove todos os subsets para mostrar geometria original
+                viewer.IFC.loader.ifcManager.removeSubset(currentModelID);
+                return;
+            }
+            
+            viewer.IFC.loader.ifcManager.createSubset({
+                modelID: currentModelID,
+                ids: allIds,
+                removePrevious: true,
+                customID: "visibleSubset"
+            });
+            
+            console.log(`✅ ${allIds.length} elementos visíveis`);
+            
+        } catch (error) {
+            console.error("❌ Erro ao mostrar todos:", error);
+        }
+    }
+
+    // --- Inicializa ---
+    viewer = CreateViewer(container);
+    loadIfc('models/01.ifc');
+
+    const input = document.getElementById("file-input");
+    const hideSelectedButton = document.getElementById("hide-selected");
+    const showAllButton = document.getElementById("show-all");
+
+    // --- Upload manual ---
+    if (input) {
+        input.addEventListener("change", async (changed) => {
+            const file = changed.target.files[0];
+            const ifcURL = URL.createObjectURL(file);
+            await loadIfc(ifcURL);
+        }, false);
+    }
+
+    // =======================================================
+    // 🔹 CONTROLE DE VISIBILIDADE
+    // =======================================================
 
     async function hideSelected() {
         if (!lastPickedItem || currentModelID === -1) {
@@ -101,103 +131,120 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const expressID = lastPickedItem.id;
-        
-        // Remove o item do subset visível (Sintaxe correta)
-        viewer.IFC.loader.ifcManager.removeFromSubset(
-            currentModelID,
-            [expressID],
-            "visibleSubset"
-        );
+        console.log(`🔹 Ocultando item ${expressID}`);
 
-        console.log(`✅ Item ${expressID} ocultado com sucesso.`);
+        try {
+            // Remove o item do subset visível
+            viewer.IFC.loader.ifcManager.removeFromSubset(
+                currentModelID,
+                [expressID],
+                "visibleSubset"
+            );
+
+            console.log(`✅ Item ${expressID} ocultado com sucesso.`);
+            
+        } catch (error) {
+            console.error("❌ Erro ao ocultar item:", error);
+        }
+        
+        // Limpa seleção
         viewer.IFC.selector.unpickIfcItems();
+        viewer.IFC.selector.unHighlightIfcItems();
         lastPickedItem = null;
         
-        // Garante que o highlight de seleção foi removido
-        viewer.IFC.selector.unHighlightIfcItems();
+        // Atualiza feedback visual
+        updateSelectionInfo(null);
     }
-
-    async function showAll() {
-        // Recria o subset completo com todos os IDs e o material
-        const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
-            currentModelID,
-            null,
-            false
-        );
-
-        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
-            modelID: currentModelID,
-            ids,
-            removePrevious: true,
-            customID: "visibleSubset",
-            material: originalMaterial // Usa o material original
-        });
-        
-        if (!viewer.context.getScene().children.includes(visibleSubset)) {
-             viewer.context.getScene().add(visibleSubset);
-        }
-
-        console.log(`🔹 Todos os elementos foram exibidos novamente.`);
-    }
-
-    // --- Inicialização ---
-    viewer = CreateViewer(container);
-    loadIfc('models/01.ifc');
-
-    const input = document.getElementById("file-input");
-    const hideSelectedButton = document.getElementById("hide-selected");
-    const showAllButton = document.getElementById("show-all");
 
     if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
     if (showAllButton) showAllButton.onclick = showAll;
 
-    // --- Upload manual (mantido) ---
-    if (input) {
-        input.addEventListener("change", async (changed) => {
-            const file = changed.target.files[0];
-            const ifcURL = URL.createObjectURL(file);
-            loadIfc(ifcURL);
-        }, false);
-    } 
-
     // =======================================================
-    // 🔹 INTERAÇÕES DE SELEÇÃO
+    // 🔹 INTERAÇÕES DE SELEÇÃO - COMPLETAMENTE CORRIGIDAS
     // =======================================================
-    window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
     
-    // 🟢 CRÍTICO 7: CORRIGE O COMPORTAMENTO DO DOUBLE CLICK
+    // 🔹 SOLUÇÃO DEFINITIVA: Substituir completamente o double click handler
     window.ondblclick = async (event) => {
-        // Previne comportamento de zoom que pode ser padrão
         event.preventDefault();
         event.stopPropagation();
         
-        const item = await viewer.IFC.selector.pickIfcItem(true);
-
-        if (!item || item.modelID === undefined || item.id === undefined) {
-             // Se nada for selecionado, desfaz a seleção anterior.
-             viewer.IFC.selector.unpickIfcItems();
-             viewer.IFC.selector.unHighlightIfcItems();
-             lastPickedItem = null;
-             return;
+        if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
+        
+        try {
+            // 🔹 MÉTODO ALTERNATIVO: Usar pickIfcItem com configuração específica
+            const item = await viewer.IFC.selector.pickIfcItem();
+            
+            if (!item || item.modelID === undefined || item.id === undefined) {
+                console.log("Nenhum item IFC selecionado");
+                return;
+            }
+            
+            lastPickedItem = item;
+            
+            // 🔹 IMPORTANTE: Remove qualquer subset criado automaticamente
+            // e restaura o subset completo imediatamente
+            await showAll();
+            
+            // Apenas destaca visualmente o item selecionado
+            viewer.IFC.selector.highlightIfcItem(item, false);
+            
+            const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
+            console.log("🟩 Item selecionado:", props);
+            
+            // Atualiza feedback visual
+            updateSelectionInfo(props, item.id);
+            
+        } catch (error) {
+            console.error("Erro na seleção:", error);
         }
-
-        lastPickedItem = item;
-        
-        // Apenas destaca o item, SEM MODIFICAR SUBSETS AQUI
-        viewer.IFC.selector.highlightIfcItem(item, false);
-        
-        const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
-        console.log("🟩 Item selecionado:", props);
     };
 
-    // ... (Atalhos de teclado mantidos)
+    // 🔹 FUNÇÃO PARA ATUALIZAR O FEEDBACK VISUAL
+    function updateSelectionInfo(props, expressID = null) {
+        const selectionInfo = document.getElementById('selection-info');
+        if (!selectionInfo) return;
+        
+        if (!props || !expressID) {
+            selectionInfo.style.display = 'none';
+            return;
+        }
+        
+        const name = props.Name?.value || props.type || 'Elemento';
+        selectionInfo.textContent = `Selecionado: ${name} (ID: ${expressID})`;
+        selectionInfo.style.display = 'block';
+    }
+
+    // Atalhos do teclado
     window.onkeydown = (event) => {
-        if (event.code === 'KeyP') viewer.clipper.createPlane();
-        else if (event.code === 'KeyO') viewer.clipper.deletePlane();
-        else if (event.code === 'Escape') {
+        if (event.code === 'KeyP') {
+            viewer.clipper.createPlane();
+        } else if (event.code === 'KeyO') {
+            viewer.clipper.deletePlane();
+        } else if (event.code === 'Escape') {
             viewer.IFC.selector.unpickIfcItems();
             viewer.IFC.selector.unHighlightIfcItems();
             lastPickedItem = null;
+            updateSelectionInfo(null);
+        } else if (event.code === 'KeyH' && !event.ctrlKey) {
+            event.preventDefault();
+            hideSelected();
+        } else if (event.code === 'KeyS' && !event.ctrlKey) {
+            event.preventDefault();
+            showAll();
         }
     };
+
+    // 🔹 PREVENÇÃO ADICIONAL: Remove qualquer subset automático periodicamente
+    setInterval(() => {
+        if (viewer && currentModelID !== -1) {
+            // Verifica se há subsets não autorizados e os remove
+            const subsets = viewer.IFC.loader.ifcManager.subsets;
+            Object.keys(subsets).forEach(key => {
+                if (key !== "visibleSubset") {
+                    console.log(`🔹 Removendo subset não autorizado: ${key}`);
+                    viewer.IFC.loader.ifcManager.removeSubset(currentModelID, key);
+                }
+            });
+        }
+    }, 1000); // Verifica a cada segundo
 });
