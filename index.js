@@ -1,19 +1,17 @@
-// CÓDIGO FINAL DE SUBSUMPTION NO index.js
-
 import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
-let visibleSubset = null; 
-let originalMaterial = null; // Vamos guardar o material original para showAll
-
+let visibleSubset = null; // Variável global para o subset visível
+let originalMaterial = null; // 🟢 NOVO: Armazenar o material IFC aqui
 
 document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
+    // --- Cria o viewer ---
     function CreateViewer(container) {
         // ... (código CreateViewer idêntico)
         const newViewer = new IfcViewerAPI({
@@ -26,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
+    // --- Carrega IFC ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
@@ -34,36 +33,44 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
 
-        // 🟢 PASSO 1 CRÍTICO: Oculta o modelo original
+        // 🟢 CRÍTICO 1: Oculta o modelo original
         model.mesh.visible = false; 
-
-        // Guarda o material original para que o subset o utilize
+        
+        // 🟢 CRÍTICO 2: Armazena o material original (que garante as cores)
         originalMaterial = model.mesh.material; 
 
-        // 🔸 Cria subset com todos os elementos visíveis
+        // Cria subset inicial com tudo visível
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
 
+        // 🟢 CRÍTICO 3: Cria o subset usando o material armazenado
         const subset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset",
-            // 🟢 Usa o material original
-            material: originalMaterial 
+            material: originalMaterial // Usa o material Three.js do modelo IFC
         });
-
+        
+        // 🟢 CRÍTICO 4: Armazena o objeto subset
         visibleSubset = subset; 
+        
+        // 🟢 CRÍTICO 5: Adiciona o subset à cena (o que substitui o modelo oculto)
         viewer.context.getScene().add(visibleSubset);
 
         viewer.shadowDropper.renderShadow(currentModelID);
         return model;
     }
 
-    // --- Lógica de Ocultar/Exibir ---
+    // --- Inicializa ---
+    // ...
+
+    // =======================================================
+    // 🔹 CONTROLE DE VISIBILIDADE USANDO SUBSETS
+    // =======================================================
 
     async function hideSelected() {
         if (!lastPickedItem || currentModelID === -1) {
@@ -72,25 +79,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const expressID = lastPickedItem.id;
-        
-        // ❌ CORREÇÃO CRÍTICA FINAL: Passa o ModelID e o ExpressID, e o CustomID do subset.
-        // Remove o elemento do SUBSET (que está visível), e o elemento some.
-        // Esta sintaxe de 3 argumentos é a que *deve* funcionar na sua versão.
+
+        // Remove o item do subset visível (Lógica correta para sua versão)
         viewer.IFC.loader.ifcManager.removeFromSubset(
             currentModelID,
             [expressID],
             "visibleSubset"
         );
-        
-        // Se a sintaxe acima falhar, troque para esta:
-        /*
-        viewer.IFC.loader.ifcManager.removeFromSubset(
-            currentModelID,
-            [expressID],
-            undefined,
-            "visibleSubset"
-        );
-        */
 
         console.log(`🔹 Item ${expressID} ocultado.`);
         viewer.IFC.selector.unpickIfcItems();
@@ -100,33 +95,33 @@ document.addEventListener('DOMContentLoaded', () => {
     async function showAll() {
         if (currentModelID === -1) return;
 
+        // Recria o subset completo
         const ids = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
             currentModelID,
             null,
             false
         );
 
-        // Recria o subset completo com o material original salvo
+        // 🟢 CRÍTICO 6: Recria o subset usando o material armazenado (originalMaterial)
         visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
             ids,
             removePrevious: true,
             customID: "visibleSubset",
-            material: originalMaterial 
+            material: originalMaterial
         });
-
+        
+        // Garante que o subset está na cena
         if (!viewer.context.getScene().children.includes(visibleSubset)) {
-            viewer.context.getScene().add(visibleSubset);
+             viewer.context.getScene().add(visibleSubset);
         }
 
         console.log(`🔹 Todos os elementos foram exibidos novamente.`);
     }
 
-    // --- Inicialização e Event Listeners (Mantidos) ---
+    // ... (Inicialização e Event Listeners mantidos)
     viewer = CreateViewer(container);
     loadIfc('models/01.ifc');
-    
-    // ... (restante dos event listeners)
 
     const input = document.getElementById("file-input");
     const hideSelectedButton = document.getElementById("hide-selected");
@@ -143,6 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
     if (showAllButton) showAllButton.onclick = showAll;
 
+    // ... (Interações de Seleção)
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
 
     window.ondblclick = async () => {
