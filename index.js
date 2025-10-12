@@ -1,22 +1,20 @@
+// index.js (Lógica Three.js Pura)
+
 import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
 let currentModelID = -1;
 let lastPickedItem = null;
-let visibleSubset = null; // 🟢 Variável para o subset visível
-
-// ... (CreateViewer, loadIfc - Mantidos do seu código, mas com a captura do material do meu último código)
-// **NOTA: SEU NOVO CÓDIGO NÃO ESTÁ CAPTURANDO O MATERIAL, PRECISAMOS DISSO!**
-// ASSUMINDO QUE VOCÊ INTEGROU originalMaterial:
-
-let originalMaterial = null; 
+let visibleSubset = null; 
+let originalModelMesh = null; // Armazena a malha Three.js do modelo IFC
+let allExpressIDs = []; // Armazena TODOS os IDs visíveis
+let hiddenIDs = new Set(); // Conjunto de IDs ocultos
 
 document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
-    // --- Cria o viewer ---
     function CreateViewer(container) {
         const newViewer = new IfcViewerAPI({
             container,
@@ -28,45 +26,47 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Obtém TODOS os IDs do modelo ---
-    async function getAllExpressIDs() {
-        if (currentModelID === -1) return [];
+    // --- Recria a malha visível usando a API Three.js (Subsets forçados) ---
+    async function updateVisibleSubset() {
+        if (!originalModelMesh) return;
         
-        try {
-            // Seu método robusto de busca de IDs
-            // ... (log de busca de IDs)
-            return await viewer.IFC.loader.ifcManager.getAllItemsOfType(currentModelID, null, false);
-        } catch (error) {
-            // ... (log de erro)
-            return [];
-        }
-    }
+        // 1. Pega todos os IDs que DEVERIAM estar visíveis
+        const visibleIDs = allExpressIDs.filter(id => !hiddenIDs.has(id));
 
-    // --- Cria/Atualiza subset visível com uma lista de IDs ---
-    // 🟢 MODIFICADA PARA RECEBER A LISTA DE IDS E O MATERIAL
-    async function updateVisibleSubset(idsToDisplay, material) {
-        if (currentModelID === -1) return;
+        // 2. CRÍTICO: Usa a API de Subsets (que é a única forma de manipular a geometria carregada)
+        // Se a lista de IDs visíveis for o modelo inteiro, ele recria o subset completo.
+        // Se a lista for menor, ele cria um subset sem os IDs ocultos.
+        
+        // Oculta o modelo original
+        originalModelMesh.visible = false;
 
-        // Se o subset antigo existir, removemos ele da cena
+        // Limpa o subset anterior (se existir)
         if (visibleSubset) {
             viewer.context.getScene().remove(visibleSubset);
-            // Opcional: Dispose do objeto antigo para liberar memória (não essencial para este teste)
-            // visibleSubset.geometry.dispose();
-            // visibleSubset = null;
+            // IMPORTANTE: Dispor do subset antigo pode ser necessário para liberar memória
+            // mas vamos focar na lógica por enquanto.
         }
 
-        // 🟢 Cria o NOVO subset com os IDs atuais e o material correto
-        const newSubset = viewer.IFC.loader.ifcManager.createSubset({
+        if (visibleIDs.length === 0) {
+            console.log("Nenhum elemento visível. Subset limpo.");
+            visibleSubset = null;
+            return;
+        }
+        
+        // 3. RECRIAR O SUBSET COM APENAS OS IDS VISÍVEIS
+        // Esta é a única forma de "deletar temporariamente" a geometria no web-ifc-viewer.
+        const material = originalModelMesh.material; 
+        
+        visibleSubset = viewer.IFC.loader.ifcManager.createSubset({
             modelID: currentModelID,
-            ids: idsToDisplay,
+            ids: visibleIDs,
             removePrevious: true,
-            customID: "visibleSubset",
+            customID: "visibleSubset", // Reusa o ID para que o IFC saiba que é o mesmo objeto
             material: material 
         });
 
-        visibleSubset = newSubset;
         viewer.context.getScene().add(visibleSubset);
-        console.log(`✅ ${idsToDisplay.length} elementos visíveis`);
+        console.log(`✅ ${visibleIDs.length} elementos visíveis`);
     }
 
     // --- Carrega um IFC ---
@@ -76,28 +76,24 @@ document.addEventListener('DOMContentLoaded', () => {
         await viewer.IFC.setWasmPath("/wasm/");
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
+        
+        originalModelMesh = model.mesh; // Armazena a malha Three.js
 
-        // 🟢 CRÍTICO: CAPTURA DO MATERIAL E OCULTAÇÃO DO ORIGINAL
-        originalMaterial = model.mesh.material;
-        model.mesh.visible = false; // Oculta o modelo original
+        // Preenche a lista de todos os IDs (só faz uma vez)
+        allExpressIDs = await viewer.IFC.loader.ifcManager.getAllItemsOfType(
+            currentModelID,
+            null,
+            false
+        );
+        hiddenIDs.clear(); // Garante que nada está oculto no início
 
-        // 🔸 Mostra todos os elementos ao carregar
-        await showAll(); 
+        await updateVisibleSubset();
         
         viewer.shadowDropper.renderShadow(currentModelID);
         return model;
     }
 
-    // --- Exibe todos os elementos (Recria o subset completo) ---
-    async function showAll() {
-        console.log("🔹 Mostrando todos os elementos...");
-        const allIds = await getAllExpressIDs();
-        await updateVisibleSubset(allIds, originalMaterial); // Atualiza com todos os IDs
-    }
-
-    // =======================================================
-    // 🔹 CONTROLE DE VISIBILIDADE USANDO SUBSETS
-    // =======================================================
+    // --- Lógica de Ocultar/Exibir ---
 
     async function hideSelected() {
         if (!lastPickedItem || currentModelID === -1) {
@@ -105,63 +101,78 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const expressIDToHide = lastPickedItem.id;
+        const expressID = lastPickedItem.id;
         
-        console.log(`🔹 Ocultando item ${expressIDToHide}`);
-
-        // 🟢 ESTRATÉGIA "DELETAR E RECARREGAR" (Forçando a Recriação)
+        if (hiddenIDs.has(expressID)) {
+            console.log(`🔹 Item ${expressID} já está oculto.`);
+            return;
+        }
         
-        // 1. Obtém a lista atual de IDs visíveis
-        const allIds = await getAllExpressIDs();
-        
-        // 2. Filtra, removendo o ID a ser ocultado
-        const newVisibleIds = allIds.filter(id => id !== expressIDToHide);
+        hiddenIDs.add(expressID); // Adiciona ID à lista de ocultos
+        await updateVisibleSubset(); // Recria a malha visível
 
-        // 3. Recria o subset (isso força a renderização do Three.js)
-        await updateVisibleSubset(newVisibleIds, originalMaterial);
-
-        console.log(`✅ Item ${expressIDToHide} ocultado com sucesso.`);
+        console.log(`✅ Item ${expressID} ocultado com sucesso.`);
         viewer.IFC.selector.unpickIfcItems();
         viewer.IFC.selector.unHighlightIfcItems();
         lastPickedItem = null;
     }
 
-    // ... (restante do código, event listeners)
+    async function showAll() {
+        hiddenIDs.clear(); // Limpa a lista de ocultos
+        await updateVisibleSubset(); // Recria a malha completa
+        console.log(`🔹 Todos os elementos foram exibidos novamente.`);
+    }
     
-    if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
-    if (showAllButton) showAllButton.onclick = showAll;
-    
-    // ... (Inicialização e Interações)
-    
-    // --- Inicializa ---
+    // --- Lógica de Isolamento (Duplo Clique) ---
+    // Este é o comportamento que você descreveu: ao clicar, isola.
+    async function isolateSelected() {
+        if (!lastPickedItem || currentModelID === -1) return;
+        
+        const expressID = lastPickedItem.id;
+
+        // Encontra todos os IDs que NÃO são o selecionado
+        const idsToHide = allExpressIDs.filter(id => id !== expressID);
+        
+        // Adiciona todos para ocultar e recria o subset
+        hiddenIDs = new Set(idsToHide);
+        await updateVisibleSubset();
+        
+        console.log(`✅ Item ${expressID} isolado.`)
+        viewer.IFC.selector.unHighlightIfcItems();
+    }
+
+
+    // --- Inicialização ---
     viewer = CreateViewer(container);
     loadIfc('models/01.ifc');
 
+    // ... (Conexão de botões omitida para brevidade, mas deve ser mantida)
     const hideSelectedButton = document.getElementById("hide-selected");
     const showAllButton = document.getElementById("show-all");
-    
-    window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
+    if (hideSelectedButton) hideSelectedButton.onclick = hideSelected;
+    if (showAllButton) showAllButton.onclick = showAll;
 
+    // =======================================================
+    // 🔹 INTERAÇÕES DE SELEÇÃO E ISOLAMENTO
+    // =======================================================
+    window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
+    
     window.ondblclick = async (event) => {
         event.preventDefault();
         event.stopPropagation();
         
         const item = await viewer.IFC.selector.pickIfcItem(true);
+
         if (!item || item.modelID === undefined || item.id === undefined) {
-             viewer.IFC.selector.unpickIfcItems();
-             viewer.IFC.selector.unHighlightIfcItems();
-             lastPickedItem = null;
+             showAll(); // Se clicar fora, exibe tudo
              return;
         }
 
         lastPickedItem = item;
         
-        // 🟢 NOVO COMPORTAMENTO: Isola a peça no double click (como você descreveu)
-        const idsToDisplay = [item.id];
-        await updateVisibleSubset(idsToDisplay, originalMaterial);
-        
-        // Não é necessário highlight se o item já está isolado
-        
+        // ❌ AQUI ESTÁ O ISOLAMENTO QUE VOCÊ NOTOU
+        await isolateSelected();
+
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         console.log("🟩 Item selecionado:", props);
     };
@@ -174,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
             viewer.IFC.selector.unpickIfcItems();
             viewer.IFC.selector.unHighlightIfcItems();
             lastPickedItem = null;
-            showAll(); // Opcional: volta a mostrar tudo no ESC
+            showAll(); // Exibe tudo ao pressionar ESC
         }
     };
 });
