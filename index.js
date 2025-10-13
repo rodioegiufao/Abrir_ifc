@@ -28,6 +28,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // 5. INICIA ANIMAÇÃO
     animate();
+    
+    // 6. DEBUG: Mostra informações do modelo no console
+    setTimeout(() => {
+        console.log('🔍 Modelo carregado, use debugIFC no console para explorar:');
+        console.log('- debugIFC.getModelInfo() - Estrutura completa');
+        console.log('- debugIFC.getElementsByType() - Estatísticas');
+        console.log('- debugIFC.getCurrentModelID() - ID do modelo');
+    }, 2000);
 });
 
 // =============================================
@@ -94,6 +102,9 @@ async function loadIFCModel(url) {
         console.log('✅ Modelo IFC carregado com sucesso!');
         console.log('📊 Model ID:', currentModelID);
         
+        // DEBUG: Mostra informações básicas do modelo
+        await showBasicModelInfo();
+        
     } catch (error) {
         console.error('❌ Erro ao carregar modelo IFC:', error);
     }
@@ -123,8 +134,15 @@ function setupSelection() {
             const expressID = getExpressID(mesh);
             
             if (expressID) {
+                console.log(`🎯 Clicou no elemento ID: ${expressID}`);
                 await highlightAndShowProperties(mesh, expressID);
+            } else {
+                console.log('❌ Mesh sem expressID encontrado');
             }
+        } else {
+            console.log('❌ Nenhum elemento clicado');
+            removeHighlight();
+            hidePropertiesPanel();
         }
     });
 }
@@ -132,6 +150,27 @@ function setupSelection() {
 // =============================================
 // FUNÇÕES DE PROPRIEDADES IFC
 // =============================================
+
+// Mostra informações básicas do modelo
+async function showBasicModelInfo() {
+    try {
+        console.log('📋 Obtendo informações básicas do modelo...');
+        
+        // Obtém a estrutura espacial
+        const spatialStructure = await ifcLoader.ifcManager.getSpatialStructure(currentModelID);
+        console.log('🏗️ Estrutura espacial:', spatialStructure);
+        
+        // Conta elementos
+        const elementsCount = await countElementsByType();
+        console.log('📊 Elementos no modelo:', elementsCount);
+        
+        // Mostra no painel de informações
+        showModelInfoPanel(elementsCount);
+        
+    } catch (error) {
+        console.error('❌ Erro ao obter informações do modelo:', error);
+    }
+}
 
 // Destaca mesh e mostra propriedades IFC
 async function highlightAndShowProperties(mesh, expressID) {
@@ -143,54 +182,58 @@ async function highlightAndShowProperties(mesh, expressID) {
         highlightMesh(mesh);
         
         // Obtém propriedades IFC
+        console.log(`🔍 Buscando propriedades para ID: ${expressID}`);
         const properties = await getIFCProperties(expressID);
         
-        // Mostra propriedades na interface
-        showPropertiesPanel(properties, expressID);
-        
-        console.log('🟩 Elemento selecionado - ID:', expressID);
-        console.log('📋 Propriedades:', properties);
+        if (properties) {
+            // Mostra propriedades na interface
+            showPropertiesPanel(properties, expressID);
+            console.log('✅ Propriedades encontradas:', properties);
+        } else {
+            console.log('❌ Nenhuma propriedade encontrada para este elemento');
+            showPropertiesPanel(null, expressID);
+        }
         
     } catch (error) {
         console.error('❌ Erro ao obter propriedades:', error);
+        showPropertiesPanel(null, expressID, error.message);
     }
 }
 
 // Obtém propriedades IFC do elemento
 async function getIFCProperties(expressID) {
-    if (!currentModelID || !expressID) return null;
+    if (!currentModelID || !expressID) {
+        console.log('❌ Model ID ou Express ID não definido');
+        return null;
+    }
     
     try {
-        // Obtém propriedades completas do elemento
+        console.log(`📡 Consultando IFC Manager para ID: ${expressID}`);
+        
+        // Método 1: Propriedades completas
         const properties = await ifcLoader.ifcManager.getItemProperties(
             currentModelID, 
             expressID, 
-            true // recursive - obtém propriedades aninhadas
+            true
         );
         
         return properties;
         
     } catch (error) {
-        console.error('❌ Erro ao obter propriedades IFC:', error);
-        return null;
-    }
-}
-
-// Obtém todas as propriedades do modelo (para debug)
-async function getAllModelProperties() {
-    if (!currentModelID) return;
-    
-    try {
-        // Obtém a estrutura espacial completa
-        const spatialStructure = await ifcLoader.ifcManager.getSpatialStructure(currentModelID);
-        console.log('🏗️ Estrutura espacial do modelo:', spatialStructure);
+        console.error('❌ Erro no getItemProperties:', error);
         
-        // Conta elementos por tipo
-        const elementsCount = await countElementsByType();
-        console.log('📊 Estatísticas do modelo:', elementsCount);
-        
-    } catch (error) {
-        console.error('❌ Erro ao obter estrutura do modelo:', error);
+        // Método 2: Tenta propriedades simples
+        try {
+            const simpleProperties = await ifcLoader.ifcManager.getItemProperties(
+                currentModelID, 
+                expressID, 
+                false
+            );
+            return simpleProperties;
+        } catch (error2) {
+            console.error('❌ Erro também no método simples:', error2);
+            return null;
+        }
     }
 }
 
@@ -203,7 +246,9 @@ async function countElementsByType() {
         { name: 'IfcColumn', type: 110 },
         { name: 'IfcDoor', type: 111 },
         { name: 'IfcWindow', type: 112 },
-        { name: 'IfcPlate', type: 113 }
+        { name: 'IfcPlate', type: 113 },
+        { name: 'IfcBuilding', type: 3 },
+        { name: 'IfcBuildingStorey', type: 4 }
     ];
     
     const counts = {};
@@ -228,13 +273,44 @@ async function countElementsByType() {
 // INTERFACE DE PROPRIEDADES
 // =============================================
 
-// Mostra painel de propriedades
-function showPropertiesPanel(properties, expressID) {
-    // Remove painel anterior se existir
-    const existingPanel = document.getElementById('properties-panel');
-    if (existingPanel) {
-        existingPanel.remove();
+// Mostra informações gerais do modelo
+function showModelInfoPanel(elementsCount) {
+    const panel = document.createElement('div');
+    panel.id = 'model-info-panel';
+    panel.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        padding: 15px;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        z-index: 999;
+        max-width: 300px;
+    `;
+    
+    let content = `<h3 style="margin: 0 0 10px 0;">🏗️ Modelo IFC</h3>`;
+    content += `<div><strong>ID:</strong> ${currentModelID}</div>`;
+    content += `<div style="margin-top: 10px;"><strong>Elementos:</strong></div>`;
+    
+    for (const [type, count] of Object.entries(elementsCount)) {
+        if (count > 0) {
+            content += `<div>• ${type}: ${count}</div>`;
+        }
     }
+    
+    content += `<div style="margin-top: 10px; color: #666; font-size: 11px;">Duplo-clique em qualquer elemento para ver propriedades</div>`;
+    
+    panel.innerHTML = content;
+    document.body.appendChild(panel);
+}
+
+// Mostra painel de propriedades do elemento
+function showPropertiesPanel(properties, expressID, error = null) {
+    // Remove painel anterior se existir
+    hidePropertiesPanel();
     
     // Cria o painel
     const panel = document.createElement('div');
@@ -243,13 +319,13 @@ function showPropertiesPanel(properties, expressID) {
         position: fixed;
         top: 20px;
         right: 20px;
-        width: 350px;
+        width: 400px;
         max-height: 80vh;
-        background: rgba(255, 255, 255, 0.95);
-        border: 1px solid #ccc;
+        background: rgba(255, 255, 255, 0.98);
+        border: 2px solid #4CAF50;
         border-radius: 8px;
         padding: 15px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         font-family: Arial, sans-serif;
         font-size: 12px;
         overflow-y: auto;
@@ -257,19 +333,23 @@ function showPropertiesPanel(properties, expressID) {
     `;
     
     // Conteúdo do painel
-    let content = `<h3 style="margin: 0 0 15px 0; color: #333;">📋 Propriedades do Elemento</h3>`;
-    content += `<div style="margin-bottom: 10px;"><strong>ID:</strong> ${expressID}</div>`;
+    let content = `<h3 style="margin: 0 0 15px 0; color: #2E7D32;">📋 Propriedades do Elemento</h3>`;
+    content += `<div style="margin-bottom: 10px; padding: 8px; background: #f0f8f0; border-radius: 4px;">
+                   <strong>ID:</strong> ${expressID}
+                 </div>`;
     
-    if (properties) {
+    if (error) {
+        content += `<div style="color: #d32f2f; margin: 10px 0;">Erro: ${error}</div>`;
+    } else if (properties) {
         content += formatProperties(properties);
     } else {
-        content += `<div style="color: #666;">Nenhuma propriedade encontrada</div>`;
+        content += `<div style="color: #666; margin: 10px 0;">Nenhuma propriedade encontrada</div>`;
     }
     
     // Botão de fechar
     content += `
-        <button onclick="document.getElementById('properties-panel').remove()" 
-                style="margin-top: 15px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        <button onclick="hidePropertiesPanel()" 
+                style="margin-top: 15px; padding: 8px 15px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;">
             Fechar
         </button>
     `;
@@ -283,22 +363,39 @@ function formatProperties(properties, level = 0) {
     let html = '';
     const indent = '&nbsp;'.repeat(level * 4);
     
+    // Propriedades principais primeiro
+    const mainProperties = ['type', 'Name', 'GlobalId', 'ObjectType', 'Tag'];
+    
+    // Mostra propriedades principais
+    for (const key of mainProperties) {
+        if (properties[key] !== undefined && properties[key] !== null) {
+            const value = properties[key];
+            html += `<div style="margin: 4px 0; padding: 2px 0;">
+                       ${indent}<strong>${key}:</strong> ${formatValue(value)}
+                     </div>`;
+        }
+    }
+    
+    // Linha separadora
+    html += `<hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">`;
+    
+    // Demais propriedades
     for (const [key, value] of Object.entries(properties)) {
-        if (value === null || value === undefined) continue;
+        if (mainProperties.includes(key) || value === null || value === undefined) continue;
         
         if (typeof value === 'object' && value !== null) {
-            // Propriedade aninhada
             if (value.value !== undefined) {
-                // Propriedade IFC com valor
-                html += `<div style="margin: 2px 0;">${indent}<strong>${key}:</strong> ${formatValue(value.value)}</div>`;
-            } else {
-                // Objeto complexo
-                html += `<div style="margin: 5px 0;">${indent}<strong>${key}:</strong></div>`;
-                html += formatProperties(value, level + 1);
+                html += `<div style="margin: 3px 0;">${indent}<strong>${key}:</strong> ${formatValue(value.value)}</div>`;
+            } else if (Object.keys(value).length > 0) {
+                html += `<details style="margin: 5px 0;">
+                           <summary style="cursor: pointer; font-weight: bold;">${key}</summary>
+                           <div style="margin-left: 10px; margin-top: 5px;">
+                             ${formatProperties(value, level + 1)}
+                           </div>
+                         </details>`;
             }
         } else {
-            // Propriedade simples
-            html += `<div style="margin: 2px 0;">${indent}<strong>${key}:</strong> ${formatValue(value)}</div>`;
+            html += `<div style="margin: 3px 0;">${indent}<strong>${key}:</strong> ${formatValue(value)}</div>`;
         }
     }
     
@@ -307,18 +404,25 @@ function formatProperties(properties, level = 0) {
 
 // Formata valores para exibição
 function formatValue(value) {
-    if (value === null || value === undefined) return 'N/A';
-    if (typeof value === 'boolean') return value ? 'Sim' : 'Não';
+    if (value === null || value === undefined) return '<em>N/A</em>';
+    if (typeof value === 'boolean') return value ? '✅ Sim' : '❌ Não';
     if (typeof value === 'number') return value.toString();
     if (typeof value === 'string') {
-        if (value.trim() === '') return '(vazio)';
+        if (value.trim() === '') return '<em>(vazio)</em>';
         return value;
     }
-    return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.length} itens]`;
+    return JSON.stringify(value).substring(0, 100) + '...';
+}
+
+// Esconde o painel de propriedades
+function hidePropertiesPanel() {
+    const panel = document.getElementById('properties-panel');
+    if (panel) panel.remove();
 }
 
 // =============================================
-// FUNÇÕES AUXILIARES (mantidas do código anterior)
+// FUNÇÕES AUXILIARES
 // =============================================
 
 // Obtém ExpressID do mesh
@@ -392,12 +496,26 @@ function animate() {
 }
 
 // =============================================
-// FUNÇÕES GLOBAIS PARA DEBUG (opcional)
+// FUNÇÕES GLOBAIS PARA DEBUG
 // =============================================
 
-// Adiciona no console para testar
 window.debugIFC = {
-    getModelInfo: () => getAllModelProperties(),
-    getElementsByType: () => countElementsByType(),
-    getCurrentModelID: () => currentModelID
+    getModelInfo: () => {
+        console.log('🔍 Obtendo informações do modelo...');
+        return showBasicModelInfo();
+    },
+    getElementsByType: () => {
+        console.log('📊 Contando elementos por tipo...');
+        return countElementsByType();
+    },
+    getCurrentModelID: () => {
+        console.log('🆔 Model ID:', currentModelID);
+        return currentModelID;
+    },
+    testProperties: async (expressID = 22620) => {
+        console.log(`🧪 Testando propriedades para ID: ${expressID}`);
+        const props = await getIFCProperties(expressID);
+        console.log('📋 Propriedades:', props);
+        return props;
+    }
 };
