@@ -25,61 +25,110 @@
             height: 100vh;
         }
 
-        /* PAINEL DE PROPRIEDADES */
+        /* PAINEL DE PROPRIEDADES - VERSÃO COMPLETA */
         #properties-panel {
             position: fixed;
             top: 10px;
             right: 10px;
-            width: 350px;
+            width: 450px; /* Ligeiramente maior para mais conteúdo */
             max-height: 95vh;
             overflow-y: auto;
-            background: rgba(255, 255, 255, 0.98); 
+            background: rgba(255, 255, 255, 0.98);
             color: #333;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
             z-index: 1000;
-            display: none; /* Inicia oculto */
+            display: none;
             font-size: 14px;
-        }
-        
-        #properties-panel h3 {
-            margin-top: 0;
-            border-bottom: 2px solid #007bff;
-            padding-bottom: 5px;
-            color: #007bff;
-            font-size: 1.2em;
+            line-height: 1.5;
         }
 
-        /* Estilo para Títulos de Seção */
+        #properties-panel h3 {
+            margin-top: 0;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 8px;
+            color: #007bff;
+            font-size: 1.3em;
+        }
+
         #properties-panel h4 {
-            color: #333;
-            font-size: 1.1em;
-            margin-top: 20px;
-            margin-bottom: 5px;
+            color: #28a745;
+            font-size: 1.2em;
+            margin-top: 25px;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #dee2e6;
         }
-        
+
         #properties-panel h5 {
-            margin: 15px 0 5px 0;
-            color: #555;
-            font-weight: bold;
-            font-size: 1em;
+            margin: 0 0 10px 0;
+            color: #495057;
+            font-weight: 600;
+            font-size: 1.1em;
         }
-        
+
         #properties-panel ul {
             list-style: none;
             padding-left: 0;
+            margin: 0;
         }
-        
+
         #properties-panel li {
-            margin-bottom: 5px;
+            margin-bottom: 6px;
+            padding: 3px 0;
+            border-bottom: 1px dotted #f0f0f0;
             line-height: 1.4;
-            padding-left: 5px;
         }
-        
+
         .type-info {
             font-style: italic;
             color: #888;
+        }
+
+        /* Scrollbar personalizada */
+        #properties-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #properties-panel::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        #properties-panel::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        #properties-panel::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* Estilo para botão de upload */
+        #file-input-container {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 2000;
+        }
+
+        #file-input-container label {
+            background: #007bff;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        #file-input-container label:hover {
+            background: #0056b3;
+        }
+
+        #file-input {
+            display: none;
         }
     </style>
 </head>
@@ -95,11 +144,9 @@
     
     <script type="module" src="./bundle.js"></script>
 
-    <div id="file-input-container" style="position: fixed; top: 10px; left: 10px; z-index: 2000;">
-        <label for="file-input" style="background: #007bff; color: white; padding: 8px 15px; border-radius: 4px; cursor: pointer;">
-            Abrir Arquivo IFC
-        </label>
-        <input type="file" id="file-input" style="display: none;">
+    <div id="file-input-container">
+        <label for="file-input">Abrir Arquivo IFC</label>
+        <input type="file" id="file-input">
     </div>
 </body>
 
