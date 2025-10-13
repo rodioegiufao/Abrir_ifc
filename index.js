@@ -44,9 +44,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!panel || !details) return;
 
         // 1. EXTRAÇÃO DE INFORMAÇÕES BÁSICAS
-        // Prioriza o Nome do tipo de elemento (Ex: Curva horizontal 90º sem tampa)
         const elementTypeName = props.type[0]?.Name?.value || props.type[0]?.constructor.name || 'Elemento Desconhecido';
-        const elementType = props.constructor.name; // Ex: IfcFlowFitting
+        const elementType = props.constructor.name;
         const elementName = props.Name?.value || elementTypeName;
 
         title.textContent = elementName;
@@ -64,9 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
             props.psets.forEach(pset => {
                 const psetName = pset.Name?.value || 'Pset Desconhecido';
                 
-                // Aplica cor diferente e negrito no Pset desejado
-                const psetStyle = psetName.includes("Itens_Associados") 
-                                  ? 'style="color: #d9534f; font-weight: bold;"' 
+                // Aplica cor e negrito no Pset desejado
+                const isAssociadosPset = psetName.includes("AltoQi_QiBuilder-Itens_Associados");
+                const psetStyle = isAssociadosPset 
+                                  ? 'style="color: #007bff; font-weight: bold;"' 
                                   : '';
 
                 htmlContent += `
@@ -76,21 +76,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (pset.HasProperties) {
                     pset.HasProperties.forEach(propHandle => {
-                        // O valor da propriedade é acessado pelo expressID do Handle
                         const prop = props[propHandle.value]; 
 
                         if (prop && prop.Name && prop.NominalValue) {
                             const propValue = prop.NominalValue.value;
                             const propName = prop.Name.value;
 
-                            // Tratamento especial para "Itens Associados"
-                            if (psetName.includes("Itens_Associados") && typeof propValue === 'string') {
-                                // Quebra a string em linhas e substitui para HTML (mantendo o conteúdo original)
+                            // CRÍTICO: Tratamento para "Itens Associados" (quebra de linha)
+                            if (isAssociadosPset && typeof propValue === 'string') {
+                                // Quebra a string por '\n', filtra linhas vazias e junta com <br>
                                 const items = propValue.split('\n').map(line => line.trim()).filter(line => line).join('<br>');
                                 
-                                htmlContent += `<li style="white-space: pre-wrap; margin-left: -20px; border-left: 3px solid #d9534f; padding-left: 10px;"><strong>${propName}:</strong><br>${items}</li>`;
+                                htmlContent += `
+                                    <li style="
+                                        margin-left: -20px; 
+                                        border-left: 3px solid #007bff; 
+                                        padding-left: 10px;
+                                        white-space: pre-wrap; /* Garante quebras de linha */
+                                    ">
+                                        <strong>${propName}:</strong><br>${items}
+                                    </li>
+                                `;
                             } else {
-                                // Exibe as propriedades de outros Psets (Dimensões, etc.)
+                                // Exibe as propriedades de outros Psets
                                 htmlContent += `<li><strong>${propName}:</strong> ${propValue}</li>`;
                             }
                         }
@@ -107,12 +115,13 @@ document.addEventListener('DOMContentLoaded', () => {
         panel.style.display = 'block';
     }
 
+
     // --- Inicialização ---
     viewer = CreateViewer(container);
-    loadIfc('models/01.ifc'); // Carrega o modelo de teste (ajuste o caminho se necessário)
+    loadIfc('models/01.ifc'); // Altere a URL conforme necessário
 
     // =======================================================
-    // 🔹 EVENTO DE DUPLO CLIQUE (ATUALIZADO)
+    // 🔹 EVENTO DE DUPLO CLIQUE (Inclui console.log do objeto completo)
     // =======================================================
     
     // Pré-seleção (hover)
@@ -127,7 +136,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const item = await viewer.IFC.selector.pickIfcItem(true);
 
-        // Se não selecionou nada, oculta o painel
         if (!item || item.modelID === undefined || item.id === undefined) {
             document.getElementById('properties-panel').style.display = 'none';
             viewer.IFC.selector.unHighlightIfcItems();
@@ -135,16 +143,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         // 1. Seleciona o item para destaque visual
-        viewer.IFC.selector.unHighlightIfcItems(); // Limpa destaques anteriores
-        viewer.IFC.selector.highlightIfcItem(item, false); // Destaca o novo item
+        viewer.IFC.selector.unHighlightIfcItems();
+        viewer.IFC.selector.highlightIfcItem(item, false);
         
-        // 2. Obtém as propriedades completas (inclui psets e tipos)
+        // 2. Obtém as propriedades completas
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
-        // 🔹 3. EXIBE NO CONSOLE (Solicitado pelo usuário)
+        // 🔹 SOLICITAÇÃO ATENDIDA: EXIBE NO CONSOLE O OBJETO COMPLETO
         console.log("🟩 Item selecionado (Objeto Completo):", props);
         
-        // 4. Chama a função para formatar e exibir no painel
+        // 3. Chama a função para formatar e exibir no painel
         showProperties(props, item.id);
     };
 
@@ -157,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Lógica de Upload de arquivo (mantida)
+    // Lógica de Upload de arquivo
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
