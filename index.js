@@ -24,15 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
-        // Garanta que o caminho para o WASM esteja correto (ex: /wasm/ ou ./wasm/)
         await viewer.IFC.setWasmPath("/wasm/"); 
-        
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
-        
-        // Oculta o modelo original após o carregamento, se necessário, 
-        // ou deixa visível se não houver lógica de subset
-        // model.mesh.visible = false; 
         
         viewer.shadowDropper.renderShadow(currentModelID);
         console.log("✅ Modelo IFC carregado com ID:", currentModelID);
@@ -69,8 +63,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (props.psets && props.psets.length > 0) {
             props.psets.forEach(pset => {
                 const psetName = pset.Name?.value || 'Pset Desconhecido';
+                
+                // Aplica cor diferente e negrito no Pset desejado
+                const psetStyle = psetName.includes("Itens_Associados") 
+                                  ? 'style="color: #d9534f; font-weight: bold;"' 
+                                  : '';
+
                 htmlContent += `
-                    <h5>${psetName}</h5>
+                    <h5 ${psetStyle}>${psetName}</h5>
                     <ul>
                 `;
 
@@ -85,10 +85,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                             // Tratamento especial para "Itens Associados"
                             if (psetName.includes("Itens_Associados") && typeof propValue === 'string') {
-                                // Quebra a string em linhas para melhor visualização
-                                const items = propValue.split('\n').join('<br>');
-                                htmlContent += `<li><strong>${propName}:</strong><br>${items}</li>`;
+                                // Quebra a string em linhas e substitui para HTML (mantendo o conteúdo original)
+                                const items = propValue.split('\n').map(line => line.trim()).filter(line => line).join('<br>');
+                                
+                                htmlContent += `<li style="white-space: pre-wrap; margin-left: -20px; border-left: 3px solid #d9534f; padding-left: 10px;"><strong>${propName}:</strong><br>${items}</li>`;
                             } else {
+                                // Exibe as propriedades de outros Psets (Dimensões, etc.)
                                 htmlContent += `<li><strong>${propName}:</strong> ${propValue}</li>`;
                             }
                         }
@@ -105,9 +107,12 @@ document.addEventListener('DOMContentLoaded', () => {
         panel.style.display = 'block';
     }
 
+    // --- Inicialização ---
+    viewer = CreateViewer(container);
+    loadIfc('models/01.ifc'); // Carrega o modelo de teste (ajuste o caminho se necessário)
 
     // =======================================================
-    // 🔹 EVENTO DE DUPLO CLIQUE (SELEÇÃO E PROPRIEDADES)
+    // 🔹 EVENTO DE DUPLO CLIQUE (ATUALIZADO)
     // =======================================================
     
     // Pré-seleção (hover)
@@ -136,7 +141,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // 2. Obtém as propriedades completas (inclui psets e tipos)
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
-        // 3. Chama a função para formatar e exibir
+        // 🔹 3. EXIBE NO CONSOLE (Solicitado pelo usuário)
+        console.log("🟩 Item selecionado (Objeto Completo):", props);
+        
+        // 4. Chama a função para formatar e exibir no painel
         showProperties(props, item.id);
     };
 
@@ -149,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Lógica de Upload de arquivo
+    // Lógica de Upload de arquivo (mantida)
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
@@ -161,9 +169,5 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    // --- Inicialização ---
-    viewer = CreateViewer(container);
-    loadIfc('models/01.ifc'); // Carrega o modelo de teste (ajuste o caminho se necessário)
 
 });
