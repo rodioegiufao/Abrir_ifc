@@ -28,14 +28,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // 5. INICIA ANIMAÇÃO
     animate();
-    
-    // 6. DEBUG: Mostra informações do modelo no console
-    setTimeout(() => {
-        console.log('🔍 Modelo carregado, use debugIFC no console para explorar:');
-        console.log('- debugIFC.getModelInfo() - Estrutura completa');
-        console.log('- debugIFC.getElementsByType() - Estatísticas');
-        console.log('- debugIFC.getCurrentModelID() - ID do modelo');
-    }, 2000);
 });
 
 // =============================================
@@ -74,6 +66,13 @@ function initScene(container) {
 async function initIFCLoader() {
     ifcLoader = new IFCLoader();
     await ifcLoader.ifcManager.setWasmPath('/wasm/');
+    
+    // 🔥 CONFIGURA O IFC MANAGER PARA ANEXAR EXPRESS ID AOS MESHES
+    ifcLoader.ifcManager.setupThreeMeshBVH(
+        require('three-mesh-bvh'),
+        ifcLoader.ifcManager
+    );
+    
     console.log('✅ IFC Loader inicializado');
 }
 
@@ -89,6 +88,9 @@ async function loadIFCModel(url) {
             scene.remove(currentModel);
         }
         
+        // 🔥 CARREGA O MODELO COM CONFIGURAÇÃO PARA PRESERVAR EXPRESS ID
+        ifcLoader.ifcManager.useWebIFC = true;
+        
         // Carrega o modelo
         currentModel = await ifcLoader.loadAsync(url);
         scene.add(currentModel);
@@ -96,13 +98,16 @@ async function loadIFCModel(url) {
         // Obtém o ID do modelo para consultas IFC
         currentModelID = currentModel.modelID;
         
+        // 🔥 VERIFICA E ANEXA EXPRESS ID AOS MESHES
+        await attachExpressIDsToMeshes();
+        
         // Ajusta a câmera para visualizar o modelo
         fitCameraToObject(currentModel);
         
         console.log('✅ Modelo IFC carregado com sucesso!');
         console.log('📊 Model ID:', currentModelID);
         
-        // DEBUG: Mostra informações básicas do modelo
+        // Mostra informações básicas do modelo
         await showBasicModelInfo();
         
     } catch (error) {
@@ -111,7 +116,95 @@ async function loadIFCModel(url) {
 }
 
 // =============================================
-// 4. SELEÇÃO DE ELEMENTOS COM PROPRIEDADES IFC
+// 🔥 FUNÇÃO CRÍTICA: ANEXA EXPRESS ID AOS MESHES
+// =============================================
+async function attachExpressIDsToMeshes() {
+    if (!currentModel || !currentModelID) return;
+    
+    console.log('🔍 Anexando Express IDs aos meshes...');
+    
+    let meshCount = 0;
+    let expressIDCount = 0;
+    
+    currentModel.traverse((child) => {
+        if (child.isMesh) {
+            meshCount++;
+            
+            // 🔥 MÉTODO 1: Tenta obter expressID da geometria
+            if (child.geometry && child.geometry.attributes) {
+                const attributes = child.geometry.attributes;
+                
+                // Verifica se há atributos de expressID
+                if (attributes.expressID) {
+                    const expressIDs = attributes.expressID.array;
+                    if (expressIDs.length > 0) {
+                        // Pega o primeiro expressID (pode haver vários para o mesmo mesh)
+                        child.userData.expressID = expressIDs[0];
+                        expressIDCount++;
+                        console.log(`🔹 Mesh ${meshCount}: ExpressID ${expressIDs[0]}`);
+                    }
+                }
+            }
+            
+            // 🔥 MÉTODO 2: Se ainda não tem expressID, tenta encontrar via ifcManager
+            if (!child.userData.expressID) {
+                try {
+                    // Tenta encontrar o expressID usando a posição do mesh
+                    const expressID = ifcLoader.ifcManager.getExpressId(child.geometry, child.faceIndex);
+                    if (expressID) {
+                        child.userData.expressID = expressID;
+                        expressIDCount++;
+                        console.log(`🔹 Mesh ${meshCount}: ExpressID ${expressID} (via faceIndex)`);
+                    }
+                } catch (error) {
+                    // Ignora erro
+                }
+            }
+            
+            // 🔥 MÉTODO 3: Marca o mesh como IFC para fácil identificação
+            child.userData.isIFCMesh = true;
+        }
+    });
+    
+    console.log(`📊 Meshes processados: ${meshCount}, Com ExpressID: ${expressIDCount}`);
+    
+    // Se nenhum mesh tem expressID, usa método alternativo
+    if (expressIDCount === 0) {
+        console.log('⚠️ Nenhum ExpressID encontrado, usando método alternativo...');
+        await useAlternativeSelectionMethod();
+    }
+}
+
+// =============================================
+// 🔥 MÉTODO ALTERNATIVO DE SELEÇÃO
+// =============================================
+async function useAlternativeSelectionMethod() {
+    console.log('🔄 Configurando seleção alternativa...');
+    
+    // Obtém todos os elementos do modelo
+    try {
+        const allElements = await ifcLoader.ifcManager.getAllItemsOfType(currentModelID, 0, true);
+        console.log(`📋 Elementos no modelo: ${allElements.length}`);
+        
+        // Para cada elemento, tenta encontrar o mesh correspondente
+        for (const expressID of allElements.slice(0, 10)) { // Limita aos primeiros 10 para teste
+            try {
+                const mesh = ifcLoader.ifcManager.getMesh(currentModelID, expressID);
+                if (mesh) {
+                    mesh.userData.expressID = expressID;
+                    console.log(`🔹 Elemento ${expressID}: Mesh encontrado`);
+                }
+            } catch (error) {
+                // Ignora erro
+            }
+        }
+    } catch (error) {
+        console.error('❌ Erro no método alternativo:', error);
+    }
+}
+
+// =============================================
+// 4. SELEÇÃO DE ELEMENTOS
 // =============================================
 function setupSelection() {
     const raycaster = new Raycaster();
@@ -127,17 +220,34 @@ function setupSelection() {
         
         // Faz raycasting
         raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObject(currentModel, true);
+        
+        // 🔥 INTERSECTA COM TODOS OS MESHES IFC
+        const ifcMeshes = getAllIFCMeshes();
+        const intersects = raycaster.intersectObjects(ifcMeshes, true);
+        
+        console.log(`🎯 Raycasting: ${ifcMeshes.length} meshes, ${intersects.length} intersects`);
         
         if (intersects.length > 0) {
             const mesh = intersects[0].object;
+            console.log('🔍 Mesh clicado:', mesh);
+            console.log('📋 UserData:', mesh.userData);
+            
             const expressID = getExpressID(mesh);
             
             if (expressID) {
-                console.log(`🎯 Clicou no elemento ID: ${expressID}`);
+                console.log(`✅ Elemento selecionado - ID: ${expressID}`);
                 await highlightAndShowProperties(mesh, expressID);
             } else {
-                console.log('❌ Mesh sem expressID encontrado');
+                console.log('❌ Mesh sem expressID, tentando método alternativo...');
+                // Tenta encontrar expressID pelo método alternativo
+                const altExpressID = await findExpressIDByGeometry(mesh);
+                if (altExpressID) {
+                    console.log(`✅ Elemento selecionado (alternativo) - ID: ${altExpressID}`);
+                    await highlightAndShowProperties(mesh, altExpressID);
+                } else {
+                    console.log('❌ Não foi possível encontrar ExpressID para este mesh');
+                    showErrorPanel('Não foi possível identificar este elemento');
+                }
             }
         } else {
             console.log('❌ Nenhum elemento clicado');
@@ -145,6 +255,46 @@ function setupSelection() {
             hidePropertiesPanel();
         }
     });
+}
+
+// =============================================
+// 🔥 FUNÇÕES AUXILIARES DE SELEÇÃO
+// =============================================
+
+// Obtém todos os meshes IFC
+function getAllIFCMeshes() {
+    const meshes = [];
+    if (currentModel) {
+        currentModel.traverse(child => {
+            if (child.isMesh && child.userData?.isIFCMesh) {
+                meshes.push(child);
+            }
+        });
+    }
+    return meshes;
+}
+
+// Obtém ExpressID do mesh (método principal)
+function getExpressID(mesh) {
+    return mesh.userData?.expressID || null;
+}
+
+// Método alternativo para encontrar ExpressID pela geometria
+async function findExpressIDByGeometry(mesh) {
+    try {
+        if (!mesh.geometry) return null;
+        
+        // Tenta usar o ifcManager para encontrar o expressID
+        const expressID = ifcLoader.ifcManager.getExpressId(mesh.geometry, 0);
+        if (expressID) {
+            // Salva para uso futuro
+            mesh.userData.expressID = expressID;
+            return expressID;
+        }
+    } catch (error) {
+        console.error('❌ Erro ao buscar ExpressID pela geometria:', error);
+    }
+    return null;
 }
 
 // =============================================
@@ -160,12 +310,8 @@ async function showBasicModelInfo() {
         const spatialStructure = await ifcLoader.ifcManager.getSpatialStructure(currentModelID);
         console.log('🏗️ Estrutura espacial:', spatialStructure);
         
-        // Conta elementos
-        const elementsCount = await countElementsByType();
-        console.log('📊 Elementos no modelo:', elementsCount);
-        
         // Mostra no painel de informações
-        showModelInfoPanel(elementsCount);
+        showModelInfoPanel(spatialStructure);
         
     } catch (error) {
         console.error('❌ Erro ao obter informações do modelo:', error);
@@ -202,79 +348,30 @@ async function highlightAndShowProperties(mesh, expressID) {
 
 // Obtém propriedades IFC do elemento
 async function getIFCProperties(expressID) {
-    if (!currentModelID || !expressID) {
-        console.log('❌ Model ID ou Express ID não definido');
-        return null;
-    }
+    if (!currentModelID || !expressID) return null;
     
     try {
-        console.log(`📡 Consultando IFC Manager para ID: ${expressID}`);
-        
-        // Método 1: Propriedades completas
+        // Tenta obter propriedades
         const properties = await ifcLoader.ifcManager.getItemProperties(
             currentModelID, 
             expressID, 
-            true
+            false // Não recursivo primeiro
         );
         
         return properties;
         
     } catch (error) {
-        console.error('❌ Erro no getItemProperties:', error);
-        
-        // Método 2: Tenta propriedades simples
-        try {
-            const simpleProperties = await ifcLoader.ifcManager.getItemProperties(
-                currentModelID, 
-                expressID, 
-                false
-            );
-            return simpleProperties;
-        } catch (error2) {
-            console.error('❌ Erro também no método simples:', error2);
-            return null;
-        }
+        console.error('❌ Erro ao obter propriedades:', error);
+        return null;
     }
-}
-
-// Conta elementos por tipo IFC
-async function countElementsByType() {
-    const types = [
-        { name: 'IfcWall', type: 106 },
-        { name: 'IfcSlab', type: 108 },
-        { name: 'IfcBeam', type: 109 },
-        { name: 'IfcColumn', type: 110 },
-        { name: 'IfcDoor', type: 111 },
-        { name: 'IfcWindow', type: 112 },
-        { name: 'IfcPlate', type: 113 },
-        { name: 'IfcBuilding', type: 3 },
-        { name: 'IfcBuildingStorey', type: 4 }
-    ];
-    
-    const counts = {};
-    
-    for (const elementType of types) {
-        try {
-            const elements = await ifcLoader.ifcManager.getAllItemsOfType(
-                currentModelID,
-                elementType.type,
-                false
-            );
-            counts[elementType.name] = elements.length;
-        } catch (error) {
-            counts[elementType.name] = 0;
-        }
-    }
-    
-    return counts;
 }
 
 // =============================================
-// INTERFACE DE PROPRIEDADES
+// INTERFACE (mantida do código anterior)
 // =============================================
 
 // Mostra informações gerais do modelo
-function showModelInfoPanel(elementsCount) {
+function showModelInfoPanel(spatialStructure) {
     const panel = document.createElement('div');
     panel.id = 'model-info-panel';
     panel.style.cssText = `
@@ -293,26 +390,17 @@ function showModelInfoPanel(elementsCount) {
     
     let content = `<h3 style="margin: 0 0 10px 0;">🏗️ Modelo IFC</h3>`;
     content += `<div><strong>ID:</strong> ${currentModelID}</div>`;
-    content += `<div style="margin-top: 10px;"><strong>Elementos:</strong></div>`;
-    
-    for (const [type, count] of Object.entries(elementsCount)) {
-        if (count > 0) {
-            content += `<div>• ${type}: ${count}</div>`;
-        }
-    }
-    
+    content += `<div><strong>Projeto:</strong> ${spatialStructure?.Name?.value || 'N/A'}</div>`;
     content += `<div style="margin-top: 10px; color: #666; font-size: 11px;">Duplo-clique em qualquer elemento para ver propriedades</div>`;
     
     panel.innerHTML = content;
     document.body.appendChild(panel);
 }
 
-// Mostra painel de propriedades do elemento
+// Mostra painel de propriedades (simplificado)
 function showPropertiesPanel(properties, expressID, error = null) {
-    // Remove painel anterior se existir
     hidePropertiesPanel();
     
-    // Cria o painel
     const panel = document.createElement('div');
     panel.id = 'properties-panel';
     panel.style.cssText = `
@@ -321,7 +409,7 @@ function showPropertiesPanel(properties, expressID, error = null) {
         right: 20px;
         width: 400px;
         max-height: 80vh;
-        background: rgba(255, 255, 255, 0.98);
+        background: white;
         border: 2px solid #4CAF50;
         border-radius: 8px;
         padding: 15px;
@@ -332,112 +420,55 @@ function showPropertiesPanel(properties, expressID, error = null) {
         z-index: 1000;
     `;
     
-    // Conteúdo do painel
-    let content = `<h3 style="margin: 0 0 15px 0; color: #2E7D32;">📋 Propriedades do Elemento</h3>`;
-    content += `<div style="margin-bottom: 10px; padding: 8px; background: #f0f8f0; border-radius: 4px;">
-                   <strong>ID:</strong> ${expressID}
-                 </div>`;
+    let content = `<h3 style="margin: 0 0 15px 0;">📋 Propriedades</h3>`;
+    content += `<div><strong>ID:</strong> ${expressID}</div>`;
     
     if (error) {
-        content += `<div style="color: #d32f2f; margin: 10px 0;">Erro: ${error}</div>`;
+        content += `<div style="color: red;">Erro: ${error}</div>`;
     } else if (properties) {
-        content += formatProperties(properties);
+        content += `<div><strong>Tipo:</strong> ${properties.type || 'N/A'}</div>`;
+        content += `<div><strong>Nome:</strong> ${properties.Name?.value || 'N/A'}</div>`;
+        content += `<div><strong>GlobalId:</strong> ${properties.GlobalId?.value || 'N/A'}</div>`;
     } else {
-        content += `<div style="color: #666; margin: 10px 0;">Nenhuma propriedade encontrada</div>`;
+        content += `<div>Nenhuma propriedade encontrada</div>`;
     }
     
-    // Botão de fechar
-    content += `
-        <button onclick="hidePropertiesPanel()" 
-                style="margin-top: 15px; padding: 8px 15px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;">
-            Fechar
-        </button>
-    `;
+    content += `<button onclick="hidePropertiesPanel()" style="margin-top: 15px; padding: 8px 15px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;">Fechar</button>`;
     
     panel.innerHTML = content;
     document.body.appendChild(panel);
 }
 
-// Formata as propriedades para exibição
-function formatProperties(properties, level = 0) {
-    let html = '';
-    const indent = '&nbsp;'.repeat(level * 4);
-    
-    // Propriedades principais primeiro
-    const mainProperties = ['type', 'Name', 'GlobalId', 'ObjectType', 'Tag'];
-    
-    // Mostra propriedades principais
-    for (const key of mainProperties) {
-        if (properties[key] !== undefined && properties[key] !== null) {
-            const value = properties[key];
-            html += `<div style="margin: 4px 0; padding: 2px 0;">
-                       ${indent}<strong>${key}:</strong> ${formatValue(value)}
-                     </div>`;
-        }
-    }
-    
-    // Linha separadora
-    html += `<hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">`;
-    
-    // Demais propriedades
-    for (const [key, value] of Object.entries(properties)) {
-        if (mainProperties.includes(key) || value === null || value === undefined) continue;
-        
-        if (typeof value === 'object' && value !== null) {
-            if (value.value !== undefined) {
-                html += `<div style="margin: 3px 0;">${indent}<strong>${key}:</strong> ${formatValue(value.value)}</div>`;
-            } else if (Object.keys(value).length > 0) {
-                html += `<details style="margin: 5px 0;">
-                           <summary style="cursor: pointer; font-weight: bold;">${key}</summary>
-                           <div style="margin-left: 10px; margin-top: 5px;">
-                             ${formatProperties(value, level + 1)}
-                           </div>
-                         </details>`;
-            }
-        } else {
-            html += `<div style="margin: 3px 0;">${indent}<strong>${key}:</strong> ${formatValue(value)}</div>`;
-        }
-    }
-    
-    return html;
-}
-
-// Formata valores para exibição
-function formatValue(value) {
-    if (value === null || value === undefined) return '<em>N/A</em>';
-    if (typeof value === 'boolean') return value ? '✅ Sim' : '❌ Não';
-    if (typeof value === 'number') return value.toString();
-    if (typeof value === 'string') {
-        if (value.trim() === '') return '<em>(vazio)</em>';
-        return value;
-    }
-    if (Array.isArray(value)) return `[${value.length} itens]`;
-    return JSON.stringify(value).substring(0, 100) + '...';
-}
-
-// Esconde o painel de propriedades
 function hidePropertiesPanel() {
     const panel = document.getElementById('properties-panel');
     if (panel) panel.remove();
 }
 
-// =============================================
-// FUNÇÕES AUXILIARES
-// =============================================
-
-// Obtém ExpressID do mesh
-function getExpressID(mesh) {
-    let current = mesh;
-    while (current) {
-        if (current.userData && current.userData.expressID) {
-            return current.userData.expressID;
-        }
-        current = current.parent;
-    }
-    return null;
+function showErrorPanel(message) {
+    hidePropertiesPanel();
+    
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #ffebee;
+        border: 1px solid #f44336;
+        border-radius: 8px;
+        padding: 15px;
+        font-family: Arial, sans-serif;
+        z-index: 1000;
+    `;
+    panel.innerHTML = `<div style="color: #d32f2f;">⚠️ ${message}</div>`;
+    document.body.appendChild(panel);
+    
+    setTimeout(() => panel.remove(), 3000);
 }
 
-// Destaca um mesh
+// =============================================
+// FUNÇÕES AUXILIARES RESTANTES
+// =============================================
+
 function highlightMesh(mesh) {
     mesh.userData.originalMaterial = mesh.material;
     mesh.material = mesh.material.clone();
@@ -445,18 +476,16 @@ function highlightMesh(mesh) {
     mesh.material.emissiveIntensity = 0.3;
 }
 
-// Remove highlight
 function removeHighlight() {
     if (currentModel) {
         currentModel.traverse(child => {
-            if (child.isMesh && child.userData.originalMaterial) {
+            if (child.isMesh && child.userData?.originalMaterial) {
                 child.material = child.userData.originalMaterial;
             }
         });
     }
 }
 
-// Adiciona iluminação
 function addLights() {
     const ambientLight = new AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
@@ -466,7 +495,6 @@ function addLights() {
     scene.add(directionalLight);
 }
 
-// Ajusta câmera
 function fitCameraToObject(object) {
     const box = new Box3().setFromObject(object);
     const center = box.getCenter(new Vector3());
@@ -479,7 +507,6 @@ function fitCameraToObject(object) {
     controls.update();
 }
 
-// Configura redimensionamento
 function setupResize(container) {
     window.addEventListener('resize', () => {
         camera.aspect = container.clientWidth / container.clientHeight;
@@ -488,34 +515,24 @@ function setupResize(container) {
     });
 }
 
-// Loop de animação
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
     renderer.render(scene, camera);
 }
 
-// =============================================
-// FUNÇÕES GLOBAIS PARA DEBUG
-// =============================================
-
+// Debug functions
 window.debugIFC = {
-    getModelInfo: () => {
-        console.log('🔍 Obtendo informações do modelo...');
-        return showBasicModelInfo();
-    },
-    getElementsByType: () => {
-        console.log('📊 Contando elementos por tipo...');
-        return countElementsByType();
-    },
-    getCurrentModelID: () => {
-        console.log('🆔 Model ID:', currentModelID);
-        return currentModelID;
-    },
-    testProperties: async (expressID = 22620) => {
-        console.log(`🧪 Testando propriedades para ID: ${expressID}`);
-        const props = await getIFCProperties(expressID);
-        console.log('📋 Propriedades:', props);
-        return props;
+    getModelInfo: () => showBasicModelInfo(),
+    testSelection: () => {
+        console.log('🧪 Testando seleção...');
+        const meshes = getAllIFCMeshes();
+        console.log(`📊 Meshes IFC: ${meshes.length}`);
+        meshes.forEach((mesh, i) => {
+            console.log(`Mesh ${i}:`, {
+                expressID: mesh.userData?.expressID,
+                userData: mesh.userData
+            });
+        });
     }
 };
