@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
-    // --- Cria o viewer (função omitida) ---
+    // --- Cria o viewer ---
     function CreateViewer(container) {
         const newViewer = new IfcViewerAPI({
             container,
@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Carrega um IFC (função omitida) ---
+    // --- Carrega um IFC ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
@@ -35,16 +35,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES (Corrigida: Tudo Visível)
+    // 🔹 FUNÇÃO showProperties (Versão Robusta: TUDO VISÍVEL)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
         const title = document.getElementById('element-title');
         const details = document.getElementById('element-details');
         
-        if (!panel || !details) return;
+        if (!panel || !details) {
+            console.error("IDs de painel não encontrados. Verifique seu index.html.");
+            return;
+        }
 
-        // 1. INFORMAÇÕES BÁSICAS
+        // 1. EXTRAÇÃO DE DADOS BÁSICOS
         const elementTypeName = props.type[0]?.Name?.value || props.type[0]?.constructor.name || 'Elemento Desconhecido';
         const elementType = props.constructor.name;
         const elementName = props.Name?.value || elementTypeName;
@@ -60,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let associadosHTML = '';
         let associadosPsetFound = false;
 
-        // 2. PERCORRE E EXTRAI PROPRIEDADES
+        // 2. PERCORRE TODOS OS PSETS
         if (props.psets && props.psets.length > 0) {
             props.psets.forEach((pset) => {
                 const psetName = pset.Name?.value || 'Pset Desconhecido';
@@ -76,17 +79,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             const propValue = prop.NominalValue.value;
                             const propName = prop.Name.value;
 
-                            // Trata propriedades de Identificação (move para o topo)
+                            // Se é uma propriedade principal, move para o topo
                             if (propriedadesPrincipais.includes(propName) && !propriedadesPrincipaisEncontradas.includes(propName)) {
                                 propriedadesPrincipaisEncontradas.push(propName);
                                 identificacaoPrincipalHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
                             }
                             
-                            // 🔹 TRATA ITENS ASSOCIADOS - SEMPRE VISÍVEL
-                            if (isAssociadosPset && typeof propValue === 'string') {
+                            // 🔹 TRATA ITENS ASSOCIADOS
+                            else if (isAssociadosPset && typeof propValue === 'string') {
                                 associadosPsetFound = true;
                                 
-                                // Divide a string por quebras de linha e formata
+                                // Formatação multilinha para o insumo
                                 const items = propValue.split('\n')
                                     .map(line => line.trim())
                                     .filter(line => line)
@@ -105,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     </li>
                                 `;
                             } else {
-                                // Acumula nas propriedades normais do Pset
+                                // Se NÃO é de Associados e NÃO é principal, acumula no Pset normal
                                 currentPsetPropertiesHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
                             }
                         }
@@ -113,14 +116,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 // Adiciona o Pset ao HTML restante SOMENTE se não for o Pset de Associados
-                // e se ele tiver conteúdo para exibir.
                 if (!isAssociadosPset && currentPsetPropertiesHTML.length > 0) {
                     psetsRestantesHTML += `<h5>${psetName}</h5><ul>${currentPsetPropertiesHTML}</ul>`;
                 }
             });
-        } else {
-            psetsRestantesHTML = `<p>Nenhum conjunto de propriedades (Psets) encontrado.</p>`;
         }
+        
+        // 3. MONTAGEM DO HTML FINAL
         
         // Finaliza o HTML de Identificação
         identificacaoPrincipalHTML += `
@@ -129,32 +131,29 @@ document.addEventListener('DOMContentLoaded', () => {
             <p><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
         </ul><hr>`;
 
-        // 3. MONTA E EXIBE O CONTEÚDO FINAL
         let finalDetailsHTML = identificacaoPrincipalHTML;
         
-        // Adiciona a seção de Associados (se encontrada)
+        // 🔹 3A. ADICIONA A SEÇÃO DE ASSOCIADOS (PRIORIDADE)
         if (associadosPsetFound) {
-            // Título fixo para o Pset de Associados
             finalDetailsHTML += '<h4>AltoQi_QiBuilder-Itens_Associados</h4>';
             finalDetailsHTML += `<ul style="margin-top: -10px;">${associadosHTML}</ul><hr>`;
         }
         
-        // Adiciona os demais Psets
+        // 🔹 3B. ADICIONA OS DEMAIS PSETS
         finalDetailsHTML += psetsRestantesHTML;
+        
+        if (!props.psets || props.psets.length === 0) {
+            finalDetailsHTML += `<p>Nenhum conjunto de propriedades (Psets) encontrado.</p>`;
+        }
 
+        // 4. EXIBE O PAINEL
         details.innerHTML = finalDetailsHTML;
         panel.style.display = 'block';
     }
 
-    // 🚨 REMOVA OU COMENTE A FUNÇÃO addToggleListeners (não é mais necessária)
-    // function addToggleListeners(...) { ... }
-    
-    // 🚨 A função addToggleListeners FOI REMOVIDA
-    // -----------------------------------------------------------------
-
-    // --- Inicialização (omitiida) ---
+    // --- Inicialização ---
     viewer = CreateViewer(container);
-    loadIfc('models/01.ifc'); 
+    loadIfc('models/01.ifc'); // Altere a URL conforme necessário
 
     // =======================================================
     // 🔹 EVENTO DE DUPLO CLIQUE
@@ -180,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.IFC.selector.unHighlightIfcItems();
         viewer.IFC.selector.highlightIfcItem(item, false);
         
-        // Pede o objeto COMPLETO (true)
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
         // Armazena para pesquisa no console
@@ -190,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showProperties(props, item.id);
     };
 
-    // Atalhos do teclado (omitiida)
+    // Atalhos do teclado (Limpar seleção ao apertar ESC)
     window.onkeydown = (event) => {
         if (event.code === 'Escape') {
             viewer.IFC.selector.unpickIfcItems();
@@ -200,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Lógica de Upload de arquivo (omitiida)
+    // Lógica de Upload de arquivo 
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
