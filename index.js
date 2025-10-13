@@ -6,10 +6,19 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { IFCLoader } from 'web-ifc-three';
 
-// Variáveis globais
+// 🔥 VARIÁVEIS GLOBAIS - ESTRATÉGIA DE ARMAZENAMENTO
 let scene, renderer, camera, controls, ifcLoader;
 let currentModel = null;
 let currentModelID = null;
+
+// 🔥 ARMAZENAMENTO DOS ELEMENTOS IFC
+let ifcElements = new Map(); // Map<expressID, { meshes: THREE.Mesh[], properties: any }>
+let allOriginalMeshes = []; // Todos os meshes originais
+let visibleMeshes = []; // Meshes atualmente visíveis
+let hiddenElements = new Set(); // IDs dos elementos ocultos
+
+// 🔥 ELEMENTO SELECIONADO ATUAL
+let selectedElement = null; // { expressID: number, meshes: THREE.Mesh[] }
 
 document.addEventListener('DOMContentLoaded', async () => {
     const container = document.getElementById('viewer-container');
@@ -34,29 +43,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 // 1. INICIALIZAÇÃO DA CENA
 // =============================================
 function initScene(container) {
-    // Cria a cena
     scene = new Scene();
     scene.background = new Color(0xeeeeee);
     
-    // Cria a câmera
     camera = new PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
     camera.position.set(50, 50, 50);
     
-    // Cria o renderizador
     renderer = new WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
     
-    // Configura controles de órbita
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     
-    // Adiciona iluminação
     addLights();
-    
-    // Configura redimensionamento
     setupResize(container);
 }
 
@@ -70,102 +72,194 @@ async function initIFCLoader() {
 }
 
 // =============================================
-// 3. CARREGAMENTO DO MODELO IFC
+// 3. CARREGAMENTO DO MODELO IFC - ESTRATÉGIA CORRETA
 // =============================================
 async function loadIFCModel(url) {
     try {
         console.log('🔄 Carregando modelo IFC...');
         
-        // Remove modelo anterior se existir
-        if (currentModel) {
-            scene.remove(currentModel);
-        }
+        // Limpa dados anteriores
+        cleanupPreviousModel();
         
         // Carrega o modelo
         currentModel = await ifcLoader.loadAsync(url);
         scene.add(currentModel);
-        
-        // Obtém o ID do modelo para consultas IFC
         currentModelID = currentModel.modelID;
         
-        // 🔥 VERIFICA E ANEXA EXPRESS ID AOS MESHES
-        await attachExpressIDsToMeshes();
+        // 🔥 ESTRATÉGIA CRÍTICA: ORGANIZA TODOS OS ELEMENTOS
+        await organizeIFCElements();
         
-        // Ajusta a câmera para visualizar o modelo
+        // Ajusta a câmera
         fitCameraToObject(currentModel);
         
-        console.log('✅ Modelo IFC carregado com sucesso!');
-        console.log('📊 Model ID:', currentModelID);
+        console.log('✅ Modelo IFC carregado e organizado!');
+        console.log(`📊 Elementos carregados: ${ifcElements.size}`);
         
-        // Mostra informações básicas do modelo
-        await showBasicModelInfo();
+        showModelInfoPanel();
         
     } catch (error) {
         console.error('❌ Erro ao carregar modelo IFC:', error);
     }
 }
 
-// =============================================
-// 🔥 FUNÇÃO CRÍTICA: ANEXA EXPRESS ID AOS MESHES
-// =============================================
-async function attachExpressIDsToMeshes() {
+// 🔥 LIMPA MODELO ANTERIOR
+function cleanupPreviousModel() {
+    if (currentModel) {
+        scene.remove(currentModel);
+    }
+    ifcElements.clear();
+    allOriginalMeshes = [];
+    visibleMeshes = [];
+    hiddenElements.clear();
+    selectedElement = null;
+}
+
+// 🔥 ORGANIZA TODOS OS ELEMENTOS IFC
+async function organizeIFCElements() {
     if (!currentModel || !currentModelID) return;
     
-    console.log('🔍 Anexando Express IDs aos meshes...');
+    console.log('🏗️ Organizando elementos IFC...');
     
-    let meshCount = 0;
-    let expressIDCount = 0;
+    // Coleta todos os meshes do modelo
+    collectAllMeshes();
+    
+    // Agrupa meshes por expressID
+    groupMeshesByExpressID();
+    
+    // Carrega propriedades para cada elemento
+    await loadElementsProperties();
+    
+    console.log(`📊 Organização concluída: ${ifcElements.size} elementos únicos`);
+}
+
+// 🔥 COLETA TODOS OS MESHES
+function collectAllMeshes() {
+    allOriginalMeshes = [];
     
     currentModel.traverse((child) => {
         if (child.isMesh) {
-            meshCount++;
-            
-            // 🔥 MÉTODO 1: Tenta obter expressID da geometria
-            if (child.geometry && child.geometry.attributes) {
-                const attributes = child.geometry.attributes;
-                
-                // Verifica se há atributos de expressID
-                if (attributes.expressID) {
-                    const expressIDs = attributes.expressID.array;
-                    if (expressIDs.length > 0) {
-                        // Pega o primeiro expressID (pode haver vários para o mesmo mesh)
-                        child.userData.expressID = expressIDs[0];
-                        expressIDCount++;
-                        console.log(`🔹 Mesh ${meshCount}: ExpressID ${expressIDs[0]}`);
-                    }
-                }
-                
-                // 🔥 MÉTODO 2: Verifica outros atributos possíveis
-                if (!child.userData.expressID && attributes.itemID) {
-                    const itemIDs = attributes.itemID.array;
-                    if (itemIDs.length > 0) {
-                        child.userData.expressID = itemIDs[0];
-                        expressIDCount++;
-                        console.log(`🔹 Mesh ${meshCount}: ExpressID ${itemIDs[0]} (via itemID)`);
-                    }
-                }
-            }
-            
-            // 🔥 MÉTODO 3: Marca o mesh como IFC para fácil identificação
+            allOriginalMeshes.push(child);
             child.userData.isIFCMesh = true;
-            
-            // 🔥 MÉTODO 4: Se ainda não tem, tenta usar um ID sequencial como fallback
-            if (!child.userData.expressID) {
-                child.userData.tempID = meshCount;
-            }
         }
     });
     
-    console.log(`📊 Meshes processados: ${meshCount}, Com ExpressID: ${expressIDCount}`);
+    // Inicialmente, todos os meshes estão visíveis
+    visibleMeshes = [...allOriginalMeshes];
     
-    // Se nenhum mesh tem expressID, usa método alternativo
-    if (expressIDCount === 0) {
-        console.log('⚠️ Nenhum ExpressID encontrado, usando IDs temporários...');
+    console.log(`📊 Meshes coletados: ${allOriginalMeshes.length}`);
+}
+
+// 🔥 AGRUPA MESHES POR EXPRESSID
+function groupMeshesByExpressID() {
+    let meshesWithID = 0;
+    
+    allOriginalMeshes.forEach(mesh => {
+        const expressID = findExpressID(mesh);
+        
+        if (expressID) {
+            meshesWithID++;
+            
+            if (!ifcElements.has(expressID)) {
+                ifcElements.set(expressID, {
+                    meshes: [],
+                    properties: null
+                });
+            }
+            
+            ifcElements.get(expressID).meshes.push(mesh);
+        }
+    });
+    
+    console.log(`📊 Meshes com ExpressID: ${meshesWithID}/${allOriginalMeshes.length}`);
+    
+    // Se poucos meshes têm ID, usa agrupamento por geometria
+    if (meshesWithID < allOriginalMeshes.length * 0.5) {
+        console.log('⚠️ Poucos ExpressIDs, usando agrupamento alternativo...');
+        groupMeshesByGeometry();
     }
 }
 
+// 🔥 ENCONTRA EXPRESSID DO MESH
+function findExpressID(mesh) {
+    // Método 1: UserData direto
+    if (mesh.userData?.expressID) {
+        return mesh.userData.expressID;
+    }
+    
+    // Método 2: Atributos da geometria
+    if (mesh.geometry?.attributes?.expressID) {
+        const expressIDs = mesh.geometry.attributes.expressID.array;
+        if (expressIDs.length > 0) {
+            mesh.userData.expressID = expressIDs[0];
+            return expressIDs[0];
+        }
+    }
+    
+    // Método 3: Atributos itemID
+    if (mesh.geometry?.attributes?.itemID) {
+        const itemIDs = mesh.geometry.attributes.itemID.array;
+        if (itemIDs.length > 0) {
+            mesh.userData.expressID = itemIDs[0];
+            return itemIDs[0];
+        }
+    }
+    
+    return null;
+}
+
+// 🔥 AGRUPAMENTO ALTERNATIVO POR GEOMETRIA
+function groupMeshesByGeometry() {
+    let geometryGroupID = 100000; // ID inicial para grupos
+    
+    allOriginalMeshes.forEach(mesh => {
+        if (!mesh.userData.expressID && mesh.geometry) {
+            // Cria um ID baseado na geometria
+            const geometryID = geometryGroupID++;
+            mesh.userData.expressID = geometryID;
+            
+            if (!ifcElements.has(geometryID)) {
+                ifcElements.set(geometryID, {
+                    meshes: [],
+                    properties: { type: 'GeometryGroup', Name: { value: 'Elemento Geométrico' } }
+                });
+            }
+            
+            ifcElements.get(geometryID).meshes.push(mesh);
+        }
+    });
+}
+
+// 🔥 CARREGA PROPRIEDADES DOS ELEMENTOS
+async function loadElementsProperties() {
+    console.log('📋 Carregando propriedades dos elementos...');
+    
+    let loadedProperties = 0;
+    
+    for (const [expressID, element] of ifcElements) {
+        try {
+            // Tenta carregar propriedades apenas para IDs numéricos (não os de geometria)
+            if (typeof expressID === 'number' && expressID < 100000) {
+                const properties = await ifcLoader.ifcManager.getItemProperties(
+                    currentModelID, 
+                    expressID, 
+                    false
+                );
+                
+                if (properties) {
+                    element.properties = properties;
+                    loadedProperties++;
+                }
+            }
+        } catch (error) {
+            // Ignora erros - alguns elementos podem não ter propriedades
+        }
+    }
+    
+    console.log(`📊 Propriedades carregadas: ${loadedProperties}/${ifcElements.size}`);
+}
+
 // =============================================
-// 4. SELEÇÃO DE ELEMENTOS
+// 4. SELEÇÃO DE ELEMENTOS - ESTRATÉGIA CORRETA
 // =============================================
 function setupSelection() {
     const raycaster = new Raycaster();
@@ -173,143 +267,160 @@ function setupSelection() {
     
     const container = document.getElementById('viewer-container');
     
-    container.addEventListener('dblclick', async (event) => {
-        // Calcula posição do mouse
+    container.addEventListener('dblclick', (event) => {
         const rect = container.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
         
-        // Faz raycasting
         raycaster.setFromCamera(mouse, camera);
         
-        // 🔥 INTERSECTA COM TODOS OS MESHES IFC
-        const ifcMeshes = getAllIFCMeshes();
-        const intersects = raycaster.intersectObjects(ifcMeshes, true);
+        // 🔥 INTERSECTA APENAS COM MESHES VISÍVEIS
+        const intersects = raycaster.intersectObjects(visibleMeshes, true);
         
-        console.log(`🎯 Raycasting: ${ifcMeshes.length} meshes, ${intersects.length} intersects`);
+        console.log(`🎯 Raycasting: ${visibleMeshes.length} meshes visíveis, ${intersects.length} intersects`);
         
         if (intersects.length > 0) {
-            const mesh = intersects[0].object;
-            console.log('🔍 Mesh clicado:', mesh);
-            console.log('📋 UserData:', mesh.userData);
+            const clickedMesh = intersects[0].object;
+            const expressID = clickedMesh.userData?.expressID;
             
-            const expressID = getExpressID(mesh);
-            
-            if (expressID) {
-                console.log(`✅ Elemento selecionado - ID: ${expressID}`);
-                await highlightAndShowProperties(mesh, expressID);
+            if (expressID && ifcElements.has(expressID)) {
+                selectElement(expressID);
             } else {
-                console.log('❌ Mesh sem expressID, usando ID temporário...');
-                // Usa ID temporário para demonstração
-                const tempID = mesh.userData.tempID || 'N/A';
-                showPropertiesPanel(null, `Temp-${tempID}`, 'Este elemento não possui ID IFC. Apenas demonstração.');
-                highlightMesh(mesh);
+                console.log('❌ Elemento não encontrado no mapa IFC');
             }
         } else {
-            console.log('❌ Nenhum elemento clicado');
-            removeHighlight();
-            hidePropertiesPanel();
+            deselectElement();
+        }
+    });
+}
+
+// 🔥 SELECIONA ELEMENTO
+function selectElement(expressID) {
+    // Desseleciona anterior
+    deselectElement();
+    
+    const element = ifcElements.get(expressID);
+    if (!element) return;
+    
+    // Define como selecionado
+    selectedElement = {
+        expressID: expressID,
+        meshes: element.meshes
+    };
+    
+    // Destaca visualmente
+    highlightElement(selectedElement);
+    
+    // Mostra propriedades
+    showElementProperties(element.properties, expressID);
+    
+    console.log(`✅ Elemento selecionado: ${expressID} (${element.meshes.length} meshes)`);
+}
+
+// 🔥 DESSELECIONA ELEMENTO
+function deselectElement() {
+    if (selectedElement) {
+        removeHighlight(selectedElement);
+        selectedElement = null;
+    }
+    hidePropertiesPanel();
+}
+
+// 🔥 DESTACA ELEMENTO VISUALMENTE
+function highlightElement(element) {
+    element.meshes.forEach(mesh => {
+        mesh.userData.originalMaterial = mesh.material;
+        mesh.material = mesh.material.clone();
+        mesh.material.emissive.setHex(0x00ff00);
+        mesh.material.emissiveIntensity = 0.3;
+    });
+}
+
+// 🔥 REMOVE DESTAQUE
+function removeHighlight(element) {
+    element.meshes.forEach(mesh => {
+        if (mesh.userData.originalMaterial) {
+            mesh.material = mesh.userData.originalMaterial;
         }
     });
 }
 
 // =============================================
-// 🔥 FUNÇÕES AUXILIARES DE SELEÇÃO
+// 🔥 CONTROLE DE VISIBILIDADE - PULO DO GATO
 // =============================================
 
-// Obtém todos os meshes IFC
-function getAllIFCMeshes() {
-    const meshes = [];
-    if (currentModel) {
-        currentModel.traverse(child => {
-            if (child.isMesh && child.userData?.isIFCMesh) {
-                meshes.push(child);
-            }
-        });
+// OCULTAR ELEMENTO SELECIONADO
+function hideSelectedElement() {
+    if (!selectedElement) {
+        alert('Selecione um elemento primeiro (duplo clique)');
+        return;
     }
-    return meshes;
-}
-
-// Obtém ExpressID do mesh (método principal)
-function getExpressID(mesh) {
-    return mesh.userData?.expressID || null;
-}
-
-// =============================================
-// FUNÇÕES DE PROPRIEDADES IFC
-// =============================================
-
-// Mostra informações básicas do modelo
-async function showBasicModelInfo() {
-    try {
-        console.log('📋 Obtendo informações básicas do modelo...');
-        
-        // Obtém a estrutura espacial
-        const spatialStructure = await ifcLoader.ifcManager.getSpatialStructure(currentModelID);
-        console.log('🏗️ Estrutura espacial:', spatialStructure);
-        
-        // Mostra no painel de informações
-        showModelInfoPanel(spatialStructure);
-        
-    } catch (error) {
-        console.error('❌ Erro ao obter informações do modelo:', error);
-    }
-}
-
-// Destaca mesh e mostra propriedades IFC
-async function highlightAndShowProperties(mesh, expressID) {
-    try {
-        // Remove highlight anterior
-        removeHighlight();
-        
-        // Destaca o mesh
-        highlightMesh(mesh);
-        
-        // Obtém propriedades IFC
-        console.log(`🔍 Buscando propriedades para ID: ${expressID}`);
-        const properties = await getIFCProperties(expressID);
-        
-        if (properties) {
-            // Mostra propriedades na interface
-            showPropertiesPanel(properties, expressID);
-            console.log('✅ Propriedades encontradas:', properties);
-        } else {
-            console.log('❌ Nenhuma propriedade encontrada para este elemento');
-            showPropertiesPanel(null, expressID);
-        }
-        
-    } catch (error) {
-        console.error('❌ Erro ao obter propriedades:', error);
-        showPropertiesPanel(null, expressID, error.message);
-    }
-}
-
-// Obtém propriedades IFC do elemento
-async function getIFCProperties(expressID) {
-    if (!currentModelID || !expressID) return null;
     
-    try {
-        // Tenta obter propriedades
-        const properties = await ifcLoader.ifcManager.getItemProperties(
-            currentModelID, 
-            expressID, 
-            false // Não recursivo primeiro
-        );
-        
-        return properties;
-        
-    } catch (error) {
-        console.error('❌ Erro ao obter propriedades:', error);
-        return null;
-    }
+    const expressID = selectedElement.expressID;
+    
+    // Remove os meshes da lista de visíveis
+    selectedElement.meshes.forEach(mesh => {
+        const index = visibleMeshes.indexOf(mesh);
+        if (index > -1) {
+            visibleMeshes.splice(index, 1);
+        }
+        mesh.visible = false;
+    });
+    
+    // Adiciona à lista de ocultos
+    hiddenElements.add(expressID);
+    
+    console.log(`🔹 Elemento ${expressID} ocultado`);
+    
+    // Atualiza contador
+    updateHiddenCounter();
+    
+    deselectElement();
+}
+
+// MOSTRAR TODOS OS ELEMENTOS
+function showAllElements() {
+    // Restaura todos os meshes para visíveis
+    allOriginalMeshes.forEach(mesh => {
+        mesh.visible = true;
+    });
+    
+    // Reseta a lista de visíveis
+    visibleMeshes = [...allOriginalMeshes];
+    
+    // Limpa lista de ocultos
+    hiddenElements.clear();
+    
+    console.log('🔹 Todos os elementos visíveis');
+    
+    // Atualiza contador
+    updateHiddenCounter();
+    
+    deselectElement();
+}
+
+// MOSTRAR ELEMENTO ESPECÍFICO
+function showElement(expressID) {
+    const element = ifcElements.get(expressID);
+    if (!element) return;
+    
+    element.meshes.forEach(mesh => {
+        mesh.visible = true;
+        // Adiciona de volta à lista de visíveis se não estiver
+        if (!visibleMeshes.includes(mesh)) {
+            visibleMeshes.push(mesh);
+        }
+    });
+    
+    hiddenElements.delete(expressID);
+    updateHiddenCounter();
 }
 
 // =============================================
 // INTERFACE
 // =============================================
 
-// Mostra informações gerais do modelo
-function showModelInfoPanel(spatialStructure) {
+function showModelInfoPanel() {
     const panel = document.createElement('div');
     panel.id = 'model-info-panel';
     panel.style.cssText = `
@@ -327,16 +438,26 @@ function showModelInfoPanel(spatialStructure) {
     `;
     
     let content = `<h3 style="margin: 0 0 10px 0;">🏗️ Modelo IFC</h3>`;
-    content += `<div><strong>ID:</strong> ${currentModelID}</div>`;
-    content += `<div><strong>Projeto:</strong> ${spatialStructure?.Name?.value || 'N/A'}</div>`;
-    content += `<div style="margin-top: 10px; color: #666; font-size: 11px;">Duplo-clique em qualquer elemento para ver propriedades</div>`;
+    content += `<div><strong>Elementos:</strong> ${ifcElements.size}</div>`;
+    content += `<div><strong>Meshes:</strong> ${allOriginalMeshes.length}</div>`;
+    content += `<div id="hidden-counter"><strong>Ocultos:</strong> 0</div>`;
+    content += `<div style="margin-top: 10px; color: #666; font-size: 11px;">
+                   Duplo-clique: Selecionar<br>
+                   Botão: Ocultar/Mostrar
+                </div>`;
     
     panel.innerHTML = content;
     document.body.appendChild(panel);
 }
 
-// Mostra painel de propriedades
-function showPropertiesPanel(properties, expressID, message = null) {
+function updateHiddenCounter() {
+    const counter = document.getElementById('hidden-counter');
+    if (counter) {
+        counter.innerHTML = `<strong>Ocultos:</strong> ${hiddenElements.size}`;
+    }
+}
+
+function showElementProperties(properties, expressID) {
     hidePropertiesPanel();
     
     const panel = document.createElement('div');
@@ -358,23 +479,15 @@ function showPropertiesPanel(properties, expressID, message = null) {
         z-index: 1000;
     `;
     
-    let content = `<h3 style="margin: 0 0 15px 0;">📋 Propriedades do Elemento</h3>`;
+    let content = `<h3 style="margin: 0 0 15px 0;">📋 Propriedades</h3>`;
     content += `<div style="margin-bottom: 10px;"><strong>ID:</strong> ${expressID}</div>`;
     
-    if (message) {
-        content += `<div style="color: #666; margin: 10px 0;">${message}</div>`;
-    } else if (properties) {
+    if (properties) {
         content += `<div><strong>Tipo:</strong> ${properties.type || 'N/A'}</div>`;
         content += `<div><strong>Nome:</strong> ${properties.Name?.value || 'N/A'}</div>`;
         content += `<div><strong>GlobalId:</strong> ${properties.GlobalId?.value || 'N/A'}</div>`;
-        content += `<div><strong>ObjectType:</strong> ${properties.ObjectType?.value || 'N/A'}</div>`;
-        
-        // Mostra mais propriedades se disponíveis
-        if (properties.Description?.value) {
-            content += `<div><strong>Descrição:</strong> ${properties.Description.value}</div>`;
-        }
     } else {
-        content += `<div style="color: #666;">Nenhuma propriedade IFC encontrada</div>`;
+        content += `<div style="color: #666;">Propriedades IFC não disponíveis</div>`;
     }
     
     content += `<button onclick="hidePropertiesPanel()" style="margin-top: 15px; padding: 8px 15px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;">Fechar</button>`;
@@ -389,30 +502,11 @@ function hidePropertiesPanel() {
 }
 
 // =============================================
-// FUNÇÕES AUXILIARES RESTANTES
+// FUNÇÕES RESTANTES
 // =============================================
 
-function highlightMesh(mesh) {
-    mesh.userData.originalMaterial = mesh.material;
-    mesh.material = mesh.material.clone();
-    mesh.material.emissive.setHex(0x00ff00);
-    mesh.material.emissiveIntensity = 0.3;
-}
-
-function removeHighlight() {
-    if (currentModel) {
-        currentModel.traverse(child => {
-            if (child.isMesh && child.userData?.originalMaterial) {
-                child.material = child.userData.originalMaterial;
-            }
-        });
-    }
-}
-
 function addLights() {
-    const ambientLight = new AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-    
+    scene.add(new AmbientLight(0xffffff, 0.6));
     const directionalLight = new DirectionalLight(0xffffff, 1);
     directionalLight.position.set(100, 100, 50);
     scene.add(directionalLight);
@@ -444,25 +538,45 @@ function animate() {
     renderer.render(scene, camera);
 }
 
+// =============================================
+// CONEXÃO COM OS BOTÕES HTML
+// =============================================
+
+// Conecta aos botões existentes
+document.addEventListener('DOMContentLoaded', () => {
+    const hideButton = document.getElementById('hide-selected');
+    const showButton = document.getElementById('show-all');
+    
+    if (hideButton) {
+        hideButton.onclick = hideSelectedElement;
+    }
+    
+    if (showButton) {
+        showButton.onclick = showAllElements;
+    }
+});
+
 // Debug functions
 window.debugIFC = {
-    getModelInfo: () => showBasicModelInfo(),
-    testSelection: () => {
-        console.log('🧪 Testando seleção...');
-        const meshes = getAllIFCMeshes();
-        console.log(`📊 Meshes IFC: ${meshes.length}`);
-        meshes.forEach((mesh, i) => {
-            console.log(`Mesh ${i}:`, {
-                expressID: mesh.userData?.expressID,
-                tempID: mesh.userData?.tempID,
-                userData: mesh.userData
-            });
-        });
+    getStats: () => {
+        console.log('📊 Estatísticas do modelo:');
+        console.log('- Elementos únicos:', ifcElements.size);
+        console.log('- Meshes totais:', allOriginalMeshes.length);
+        console.log('- Meshes visíveis:', visibleMeshes.length);
+        console.log('- Elementos ocultos:', hiddenElements.size);
+        console.log('- Elementos:', ifcElements);
     },
-    testProperties: async (expressID = 22620) => {
-        console.log(`🧪 Testando propriedades para ID: ${expressID}`);
-        const props = await getIFCProperties(expressID);
-        console.log('📋 Propriedades:', props);
-        return props;
+    showElement: (expressID) => showElement(expressID),
+    hideElement: (expressID) => {
+        const element = ifcElements.get(expressID);
+        if (element) {
+            element.meshes.forEach(mesh => {
+                mesh.visible = false;
+                const index = visibleMeshes.indexOf(mesh);
+                if (index > -1) visibleMeshes.splice(index, 1);
+            });
+            hiddenElements.add(expressID);
+            updateHiddenCounter();
+        }
     }
 };
