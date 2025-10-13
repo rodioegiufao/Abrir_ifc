@@ -6,252 +6,178 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { IFCLoader } from 'web-ifc-three';
 
+// Variáveis globais
 let scene, renderer, camera, controls;
 let currentModel = null;
-let selectedElement = null; // { expressID: number, meshes: THREE.Mesh[] }
 
 document.addEventListener('DOMContentLoaded', async () => {
     const container = document.getElementById('viewer-container');
     
-    // Setup básico do Three.js
+    // 1. INICIALIZAÇÃO DA CENA THREE.JS
+    initScene(container);
+    
+    // 2. CARREGA O MODELO IFC
+    await loadIFCModel('models/01.ifc');
+    
+    // 3. CONFIGURA SELEÇÃO
+    setupSelection();
+    
+    // 4. INICIA ANIMAÇÃO
+    animate();
+});
+
+// =============================================
+// 1. INICIALIZAÇÃO DA CENA
+// =============================================
+function initScene(container) {
+    // Cria a cena
     scene = new Scene();
     scene.background = new Color(0xeeeeee);
     
+    // Cria a câmera
     camera = new PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
     camera.position.set(50, 50, 50);
     
+    // Cria o renderizador
     renderer = new WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
     
-    // Orbit Controls
+    // Configura controles de órbita
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     
-    // Luz
-    scene.add(new AmbientLight(0xffffff, 0.6));
+    // Adiciona iluminação
+    addLights();
+    
+    // Configura redimensionamento
+    setupResize(container);
+}
+
+// =============================================
+// 2. CARREGAMENTO DO MODELO IFC
+// =============================================
+async function loadIFCModel(url) {
+    try {
+        console.log('🔄 Carregando modelo IFC...');
+        
+        // Cria o loader IFC
+        const ifcLoader = new IFCLoader();
+        await ifcLoader.ifcManager.setWasmPath('/wasm/');
+        
+        // Carrega o modelo
+        currentModel = await ifcLoader.loadAsync(url);
+        scene.add(currentModel);
+        
+        // Ajusta a câmera para visualizar o modelo
+        fitCameraToObject(currentModel);
+        
+        console.log('✅ Modelo IFC carregado com sucesso!');
+        
+    } catch (error) {
+        console.error('❌ Erro ao carregar modelo IFC:', error);
+    }
+}
+
+// =============================================
+// 3. SELEÇÃO DE ELEMENTOS
+// =============================================
+function setupSelection() {
+    const raycaster = new Raycaster();
+    const mouse = new Vector2();
+    
+    const container = document.getElementById('viewer-container');
+    
+    container.addEventListener('dblclick', (event) => {
+        // Calcula posição do mouse
+        const rect = container.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
+        
+        // Faz raycasting
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObject(currentModel, true);
+        
+        if (intersects.length > 0) {
+            const mesh = intersects[0].object;
+            highlightMesh(mesh);
+        }
+    });
+}
+
+// =============================================
+// FUNÇÕES AUXILIARES
+// =============================================
+
+// Adiciona iluminação à cena
+function addLights() {
+    // Luz ambiente
+    const ambientLight = new AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+    
+    // Luz direcional
     const directionalLight = new DirectionalLight(0xffffff, 1);
     directionalLight.position.set(100, 100, 50);
     scene.add(directionalLight);
+}
+
+// Ajusta a câmera para visualizar o objeto
+function fitCameraToObject(object) {
+    const box = new Box3().setFromObject(object);
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
     
-    // Loader IFC
-    const ifcLoader = new IFCLoader();
-    await ifcLoader.ifcManager.setWasmPath('/wasm/');
+    // Posiciona a câmera
+    camera.position.copy(center);
+    camera.position.z += maxDim * 2;
+    controls.target.copy(center);
+    controls.update();
     
-    // Carrega modelo
-    currentModel = await ifcLoader.loadAsync('models/01.ifc');
-    scene.add(currentModel);
+    console.log('📐 Câmera ajustada para visualização 3D');
+}
+
+// Destaca um mesh (apenas visualmente)
+function highlightMesh(mesh) {
+    // Remove highlight anterior
+    removeHighlight();
     
-    // Ajusta a câmera automaticamente
-    fitCameraToObject(currentModel);
+    // Salva material original
+    mesh.userData.originalMaterial = mesh.material;
     
-    // 🔥 SETUP SIMPLIFICADO DE SELEÇÃO
-    setupSelection();
+    // Aplica material destacado
+    mesh.material = mesh.material.clone();
+    mesh.material.emissive.setHex(0x00ff00); // Verde para destaque
+    mesh.material.emissiveIntensity = 0.3;
     
-    function setupSelection() {
-        const raycaster = new Raycaster();
-        const mouse = new Vector2();
-        
-        container.addEventListener('dblclick', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            
-            const rect = container.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
-            
-            raycaster.setFromCamera(mouse, camera);
-            
-            // 🔹 MÉTODO DIRETO: Intersecta com o modelo inteiro
-            const intersects = raycaster.intersectObject(currentModel, true);
-            
-            if (intersects.length > 0) {
-                const clickedMesh = intersects[0].object;
-                const expressID = getExpressID(clickedMesh);
-                
-                if (expressID) {
-                    selectElement(expressID);
-                    console.log('✅ Elemento selecionado - ExpressID:', expressID);
-                } else {
-                    console.log('❌ Mesh sem expressID:', clickedMesh);
-                }
-            } else {
-                console.log('❌ Nenhum mesh intersectado');
-                deselectElement();
+    console.log('🟩 Elemento destacado');
+}
+
+// Remove highlight
+function removeHighlight() {
+    if (currentModel) {
+        currentModel.traverse(child => {
+            if (child.isMesh && child.userData.originalMaterial) {
+                child.material = child.userData.originalMaterial;
             }
         });
     }
-    
-    // 🔹 FUNÇÃO PARA OBTER EXPRESSID DE QUALQUER MESH
-    function getExpressID(mesh) {
-        // Procura o expressID no mesh ou em seus pais
-        let current = mesh;
-        while (current) {
-            if (current.userData && current.userData.expressID) {
-                return current.userData.expressID;
-            }
-            current = current.parent;
-        }
-        return null;
-    }
-    
-    // 🔹 SELECIONA ELEMENTO POR EXPRESSID
-    function selectElement(expressID) {
-        // Desseleciona anterior
-        deselectElement();
-        
-        // Encontra TODOS os meshes com este expressID
-        const elementMeshes = findAllMeshesByExpressID(expressID);
-        
-        if (elementMeshes.length === 0) {
-            console.log('❌ Nenhum mesh encontrado para expressID:', expressID);
-            return;
-        }
-        
-        // 🔹 DESTACA TODOS OS MESHES
-        elementMeshes.forEach(mesh => {
-            mesh.originalMaterial = mesh.material;
-            // Cria material destacado
-            mesh.material = mesh.material.clone();
-            mesh.material.emissive.setHex(0xFF0000); // Vermelho para destaque
-            mesh.material.emissiveIntensity = 0.3;
-        });
-        
-        selectedElement = { expressID, meshes: elementMeshes };
-        
-        // Feedback visual
-        updateSelectionInfo(expressID);
-        console.log(`🔹 Selecionado: ${expressID} (${elementMeshes.length} meshes)`);
-    }
-    
-    // 🔹 ENCONTRA TODOS OS MESHES COM MESMO EXPRESSID
-    function findAllMeshesByExpressID(expressID) {
-        const meshes = [];
-        currentModel.traverse((child) => {
-            if (child.isMesh) {
-                const childExpressID = getExpressID(child);
-                if (childExpressID === expressID) {
-                    meshes.push(child);
-                }
-            }
-        });
-        return meshes;
-    }
-    
-    // 🔹 DESSELECIONA ELEMENTO
-    function deselectElement() {
-        if (selectedElement && selectedElement.meshes) {
-            selectedElement.meshes.forEach(mesh => {
-                if (mesh.originalMaterial) {
-                    mesh.material = mesh.originalMaterial;
-                }
-            });
-        }
-        selectedElement = null;
-        updateSelectionInfo(null);
-    }
-    
-    // 🔹 ATUALIZA INFO DE SELEÇÃO NA TELA
-    function updateSelectionInfo(expressID) {
-        const infoDiv = document.getElementById('selection-info');
-        if (!infoDiv) return;
-        
-        if (expressID) {
-            infoDiv.textContent = `Elemento selecionado (ID: ${expressID})`;
-            infoDiv.style.display = 'block';
-        } else {
-            infoDiv.style.display = 'none';
-        }
-    }
-    
-    // 🔥 OCULTAR SELECIONADO
-    function hideSelected() {
-        if (selectedElement && selectedElement.expressID) {
-            const elementMeshes = selectedElement.meshes;
-            
-            elementMeshes.forEach(mesh => {
-                mesh.visible = false;
-            });
-            
-            console.log(`🔹 Ocultado elemento ${selectedElement.expressID}`);
-            deselectElement();
-        } else {
-            alert('Selecione um elemento primeiro (duplo clique)');
-        }
-    }
-    
-    // 🔥 MOSTRAR TODOS
-    function showAll() {
-        if (currentModel) {
-            currentModel.traverse(child => {
-                if (child.isMesh) {
-                    child.visible = true;
-                }
-            });
-            console.log('🔹 Todos os elementos visíveis');
-        }
-        deselectElement();
-    }
-    
-    // 🔥 AJUSTA CÂMERA
-    function fitCameraToObject(object) {
-        const box = new Box3().setFromObject(object);
-        const center = box.getCenter(new Vector3());
-        const size = box.getSize(new Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        
-        camera.position.copy(center);
-        camera.position.z += maxDim * 2;
-        controls.target.copy(center);
-        controls.update();
-        
-        console.log('📐 Câmera ajustada');
-    }
-    
-    // 🔥 CARREGAR NOVO ARQUIVO
-    async function loadNewIfc(url) {
-        if (currentModel) {
-            scene.remove(currentModel);
-            deselectElement();
-        }
-        
-        currentModel = await ifcLoader.loadAsync(url);
-        scene.add(currentModel);
-        fitCameraToObject(currentModel);
-        
-        console.log('✅ Novo modelo carregado');
-    }
-    
-    // Conecta aos botões
-    document.getElementById('hide-selected').onclick = hideSelected;
-    document.getElementById('show-all').onclick = showAll;
-    
-    // Upload de arquivo
-    const input = document.getElementById("file-input");
-    if (input) {
-        input.addEventListener("change", async (changed) => {
-            const file = changed.target.files[0];
-            if (file) {
-                const ifcURL = URL.createObjectURL(file);
-                await loadNewIfc(ifcURL);
-            }
-        });
-    }
-    
-    // Animação
-    function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-    }
-    animate();
-    
-    // Redimensionamento
+}
+
+// Configura redimensionamento da janela
+function setupResize(container) {
     window.addEventListener('resize', () => {
         camera.aspect = container.clientWidth / container.clientHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(container.clientWidth, container.clientHeight);
     });
-});
+}
+
+// Loop de animação
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}

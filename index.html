@@ -1,60 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <link rel="icon" type="image/png" href="./favicon.ico" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet" />
-    
-    <link rel="stylesheet" type="text/css" href="./css/styles.css" /> 
-    
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Visualizador IFC - Tudo Sobre Elétrica</title>
+    <title>Visualizador IFC - Básico</title>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        #viewer-container {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
 </head>
-
 <body>
-    
-    <div id="ui-panel">
-        <div id="file-input-container">
-            <label for="file-input" id="file-input-label">Abrir Arquivo IFC</label>
-            <input type="file" id="file-input" style="display: none;">
-        </div>
-        
-        <div id="visibility-controls">
-            <h4>Visibilidade Geral (Seleção)</h4>
-            <button id="hide-selected">Ocultar Selecionado</button> 
-            <button id="show-all">Exibir Tudo</button>
-        </div>
-    </div>
-
-    <!-- 🔹 FEEDBACK VISUAL DE SELEÇÃO - ADICIONE ESTE BLOCO -->
-    <div id="selection-info" style="
-        position: fixed; 
-        top: 10px; 
-        left: 50%; 
-        transform: translateX(-50%); 
-        background: rgba(0,0,0,0.8); 
-        color: white; 
-        padding: 10px 20px; 
-        border-radius: 5px; 
-        z-index: 1000; 
-        display: none;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        pointer-events: none;
-    ">
-        Item selecionado
-    </div>
-
     <div id="viewer-container"></div>
-    
-    <p id="notification">
-        Visualizador IFC | Desenvolvido para <a href="https://www.tudosobreeletrica.blog/" target="_blank">Tudo Sobre Elétrica</a>
-    </p>
-    
     <script type="module" src="./bundle.js"></script>
 </body>
-
 </html>
