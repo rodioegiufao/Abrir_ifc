@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
-    // --- Cria o viewer ---
+    // --- Cria o viewer (função omitida) ---
     function CreateViewer(container) {
         const newViewer = new IfcViewerAPI({
             container,
@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Carrega um IFC ---
+    // --- Carrega um IFC (função omitida) ---
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES (COM LÓGICA DE EXPANDIR CORRIGIDA)
+    // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES (TUDO VISÍVEL)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -57,6 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const propriedadesPrincipais = ['Nome', 'Classe', 'Tipo', 'Rede', 'Aplicação', 'Descrição', 'Material', 'Diâmetro'];
         let propriedadesPrincipaisEncontradas = [];
         
+        let associadosHTML = '';
+        let associadosPsetFound = false;
 
         // 2. PERCORRE E EXTRAI PROPRIEDADES
         if (props.psets && props.psets.length > 0) {
@@ -64,21 +66,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const psetName = pset.Name?.value || 'Pset Desconhecido';
                 const isAssociadosPset = psetName.includes("AltoQi_QiBuilder-Itens_Associados");
                 
-                // CRIA ID ÚNICO PARA A SEÇÃO
-                const sectionID = `pset-content-${expressID}-${index}`;
-                
-                // 🔹 HTML DO CABEÇALHO (MUDANÇA AQUI: ÍCONE SEPARADO)
-                psetsRestantesHTML += `
-                    <h5 data-target="${sectionID}"
-                        class="${isAssociadosPset ? 'clickable-header' : ''}"
-                        style="cursor: ${isAssociadosPset ? 'pointer' : 'default'}; user-select: none; ${isAssociadosPset ? 'color: #007bff; font-weight: bold;' : ''}"
-                    >
-                        ${psetName} ${isAssociadosPset ? ' <span class="toggle-icon">🔽</span>' : ''}
-                    </h5>
-                    <div id="${sectionID}" style="display: ${isAssociadosPset ? 'none' : 'block'};">
-                    <ul>
-                `;
-                
+                // Se NÃO for o Pset de Associados, cria o cabeçalho normal
+                if (!isAssociadosPset) {
+                     psetsRestantesHTML += `<h5>${psetName}</h5><ul>`;
+                }
+
                 if (pset.HasProperties) {
                     pset.HasProperties.forEach(propHandle => {
                         const prop = props[propHandle.value]; 
@@ -93,33 +85,45 @@ document.addEventListener('DOMContentLoaded', () => {
                                 identificacaoPrincipalHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
                             }
                             
-                            // Trata Itens Associados (formatação multilinha)
+                            // 🔹 TRATA ITENS ASSOCIADOS - SEMPRE VISÍVEL
                             if (isAssociadosPset && typeof propValue === 'string') {
-                                const items = propValue.split('\n').map(line => line.trim()).filter(line => line).join('<br>');
+                                associadosPsetFound = true;
                                 
-                                psetsRestantesHTML += `
+                                // Divide a string por quebras de linha e formata
+                                const items = propValue.split('\n')
+                                    .map(line => line.trim())
+                                    .filter(line => line)
+                                    .join('<br>');
+                                
+                                associadosHTML += `
                                     <li style="
                                         margin-left: -20px; 
                                         border-left: 3px solid #007bff; 
                                         padding-left: 10px;
                                         white-space: pre-wrap;
+                                        margin-top: 10px;
                                     ">
                                         <strong>${propName}:</strong><br>${items}
                                     </li>
                                 `;
-                            } else {
+                            } else if (!isAssociadosPset) {
                                 // Exibe todas as outras propriedades nos Psets de origem
                                 psetsRestantesHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
                             }
                         }
                     });
                 }
-                psetsRestantesHTML += `</ul></div>`; 
+                
+                // Fecha UL para Psets normais
+                if (!isAssociadosPset) {
+                    psetsRestantesHTML += `</ul>`; 
+                }
             });
         } else {
             psetsRestantesHTML = `<p>Nenhum conjunto de propriedades (Psets) encontrado.</p>`;
         }
         
+        // Finaliza o HTML de Identificação
         identificacaoPrincipalHTML += `
             <p class="type-info"><strong>Tipo IFC:</strong> ${elementType}</p>
             <p><strong>ID IFC:</strong> ${expressID}</p>
@@ -127,39 +131,31 @@ document.addEventListener('DOMContentLoaded', () => {
         </ul><hr>`;
 
         // 3. MONTA E EXIBE O CONTEÚDO FINAL
-        details.innerHTML = identificacaoPrincipalHTML + psetsRestantesHTML;
-        panel.style.display = 'block';
+        let finalDetailsHTML = identificacaoPrincipalHTML;
         
-        // 4. 🚨 ADICIONA O EVENT LISTENER APÓS INSERIR O HTML
-        addToggleListeners(details);
+        // Adiciona a seção de Associados (se encontrada)
+        if (associadosPsetFound) {
+            finalDetailsHTML += '<h4>AltoQi_QiBuilder-Itens_Associados</h4>';
+            finalDetailsHTML += `<ul style="margin-top: -10px;">${associadosHTML}</ul><hr>`;
+        }
+        
+        // Adiciona os demais Psets
+        finalDetailsHTML += psetsRestantesHTML;
+
+
+        details.innerHTML = finalDetailsHTML;
+        panel.style.display = 'block';
     }
     
-    // 🔹 NOVA FUNÇÃO: Adiciona evento de clique para expandir/contrair (LÓGICA CORRIGIDA)
-    function addToggleListeners(container) {
-        const headers = container.querySelectorAll('.clickable-header');
-        headers.forEach(header => {
-            header.onclick = () => {
-                const targetId = header.getAttribute('data-target');
-                const targetElement = document.getElementById(targetId);
-                const icon = header.querySelector('.toggle-icon'); // Busca o ícone dentro do H5
-                
-                if (targetElement && icon) {
-                    const isVisible = targetElement.style.display === 'block';
-                    targetElement.style.display = isVisible ? 'none' : 'block';
-                    
-                    // Atualiza o ícone (🔽 ou 🔼)
-                    icon.textContent = isVisible ? '🔽' : '🔼';
-                }
-            };
-        });
-    }
+    // 🚨 A função addToggleListeners FOI REMOVIDA
+    // -----------------------------------------------------------------
 
-    // --- Inicialização ---
+    // --- Inicialização (omitiida) ---
     viewer = CreateViewer(container);
-    loadIfc('models/01.ifc'); // Altere a URL conforme necessário
+    loadIfc('models/01.ifc'); 
 
     // =======================================================
-    // 🔹 EVENTO DE DUPLO CLIQUE (PONTO DE ENTRADA)
+    // 🔹 EVENTO DE DUPLO CLIQUE
     // =======================================================
     
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
@@ -182,15 +178,17 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.IFC.selector.unHighlightIfcItems();
         viewer.IFC.selector.highlightIfcItem(item, false);
         
+        // Pede o objeto COMPLETO (true)
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
+        // Armazena para pesquisa no console
         lastProps = props; 
         console.log("🟩 Item selecionado (Objeto Completo):", lastProps);
         
         showProperties(props, item.id);
     };
 
-    // Atalhos do teclado (Limpar seleção ao apertar ESC)
+    // Atalhos do teclado (omitiida)
     window.onkeydown = (event) => {
         if (event.code === 'Escape') {
             viewer.IFC.selector.unpickIfcItems();
@@ -200,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Lógica de Upload de arquivo 
+    // Lógica de Upload de arquivo (omitiida)
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
