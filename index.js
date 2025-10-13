@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
-    // --- Cria o viewer (A API já inclui controles e renderização) ---
+    // --- Cria o viewer ---
     function CreateViewer(container) {
         const newViewer = new IfcViewerAPI({
             container,
@@ -24,57 +24,97 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
-        await viewer.IFC.setWasmPath("/wasm/"); // Certifique-se de que a pasta /wasm/ está correta
+        // Garanta que o caminho para o WASM esteja correto (ex: /wasm/ ou ./wasm/)
+        await viewer.IFC.setWasmPath("/wasm/"); 
+        
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
+        
+        // Oculta o modelo original após o carregamento, se necessário, 
+        // ou deixa visível se não houver lógica de subset
+        // model.mesh.visible = false; 
         
         viewer.shadowDropper.renderShadow(currentModelID);
         console.log("✅ Modelo IFC carregado com ID:", currentModelID);
         return model;
     }
 
-    // --- Inicialização ---
-    viewer = CreateViewer(container);
-    loadIfc('models/01.ifc'); // Carrega o modelo de teste
+    // =======================================================
+    // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES DE FORMA FORMATADA
+    // =======================================================
+    function showProperties(props, expressID) {
+        const panel = document.getElementById('properties-panel');
+        const title = document.getElementById('element-title');
+        const details = document.getElementById('element-details');
+        
+        if (!panel || !details) return;
 
-    // =======================================================
-    // 🔹 FUNÇÃO PARA ATUALIZAR O FEEDBACK VISUAL NA TELA
-    // =======================================================
-    function updateSelectionInfo(props, expressID = null) {
-        // Usa o div 'selection-info' do seu index.html
-        const selectionInfo = document.getElementById('selection-info');
-        if (!selectionInfo) return;
-        
-        if (!props || !expressID) {
-            selectionInfo.style.display = 'none';
-            return;
-        }
-        
-        // Tenta obter o nome ou o tipo do elemento
-        const name = props.Name?.value || props.type || 'Elemento Sem Nome';
-        
-        // Constrói o conteúdo detalhado
-        let content = `
-            <strong>Tipo:</strong> ${props.type}<br>
-            <strong>Nome:</strong> ${name}<br>
-            <strong>ID IFC:</strong> ${expressID}<br>
+        // 1. EXTRAÇÃO DE INFORMAÇÕES BÁSICAS
+        // Prioriza o Nome do tipo de elemento (Ex: Curva horizontal 90º sem tampa)
+        const elementTypeName = props.type[0]?.Name?.value || props.type[0]?.constructor.name || 'Elemento Desconhecido';
+        const elementType = props.constructor.name; // Ex: IfcFlowFitting
+        const elementName = props.Name?.value || elementTypeName;
+
+        title.textContent = elementName;
+        let htmlContent = `
+            <h4>Informações Básicas</h4>
+            <p class="type-info"><strong>Tipo IFC:</strong> ${elementType}</p>
+            <p><strong>ID IFC:</strong> ${expressID}</p>
+            <p><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
+            <hr>
+            <h4>Conjuntos de Propriedades (Psets)</h4>
         `;
-        
-        selectionInfo.innerHTML = content;
-        selectionInfo.style.display = 'block';
+
+        // 2. EXTRAÇÃO DE PROPRIEDADES (psets)
+        if (props.psets && props.psets.length > 0) {
+            props.psets.forEach(pset => {
+                const psetName = pset.Name?.value || 'Pset Desconhecido';
+                htmlContent += `
+                    <h5>${psetName}</h5>
+                    <ul>
+                `;
+
+                if (pset.HasProperties) {
+                    pset.HasProperties.forEach(propHandle => {
+                        // O valor da propriedade é acessado pelo expressID do Handle
+                        const prop = props[propHandle.value]; 
+
+                        if (prop && prop.Name && prop.NominalValue) {
+                            const propValue = prop.NominalValue.value;
+                            const propName = prop.Name.value;
+
+                            // Tratamento especial para "Itens Associados"
+                            if (psetName.includes("Itens_Associados") && typeof propValue === 'string') {
+                                // Quebra a string em linhas para melhor visualização
+                                const items = propValue.split('\n').join('<br>');
+                                htmlContent += `<li><strong>${propName}:</strong><br>${items}</li>`;
+                            } else {
+                                htmlContent += `<li><strong>${propName}:</strong> ${propValue}</li>`;
+                            }
+                        }
+                    });
+                }
+                htmlContent += `</ul>`;
+            });
+        } else {
+            htmlContent += `<p>Nenhum conjunto de propriedades (Psets) encontrado.</p>`;
+        }
+
+        // 3. EXIBE NO PAINEL
+        details.innerHTML = htmlContent;
+        panel.style.display = 'block';
     }
 
 
     // =======================================================
-    // 🔹 INTERAÇÕES DE SELEÇÃO
+    // 🔹 EVENTO DE DUPLO CLIQUE (SELEÇÃO E PROPRIEDADES)
     // =======================================================
     
     // Pré-seleção (hover)
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
 
-    // Duplo Clique (SELEÇÃO E PROPRIEDADES)
+    // Duplo Clique
     window.ondblclick = async (event) => {
-        // Previne comportamento padrão que pode interferir
         event.preventDefault();
         event.stopPropagation();
         
@@ -82,9 +122,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const item = await viewer.IFC.selector.pickIfcItem(true);
 
+        // Se não selecionou nada, oculta o painel
         if (!item || item.modelID === undefined || item.id === undefined) {
-            console.log("Nenhum item IFC selecionado");
-            updateSelectionInfo(null); // Limpa o painel de seleção
+            document.getElementById('properties-panel').style.display = 'none';
+            viewer.IFC.selector.unHighlightIfcItems();
             return;
         }
         
@@ -92,12 +133,11 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.IFC.selector.unHighlightIfcItems(); // Limpa destaques anteriores
         viewer.IFC.selector.highlightIfcItem(item, false); // Destaca o novo item
         
-        // 2. Obtém as propriedades do elemento (o 'true' inclui as propriedades do tipo)
+        // 2. Obtém as propriedades completas (inclui psets e tipos)
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
-        // 3. Exibe no console e na tela
-        console.log("🟩 Item selecionado:", props);
-        updateSelectionInfo(props, item.id);
+        // 3. Chama a função para formatar e exibir
+        showProperties(props, item.id);
     };
 
     // Atalhos do teclado (Limpar seleção ao apertar ESC)
@@ -105,11 +145,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.code === 'Escape') {
             viewer.IFC.selector.unpickIfcItems();
             viewer.IFC.selector.unHighlightIfcItems();
-            updateSelectionInfo(null);
+            document.getElementById('properties-panel').style.display = 'none';
         }
     };
     
-    // Lógica de Upload de arquivo (se você quiser manter)
+    // Lógica de Upload de arquivo
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
@@ -117,8 +157,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (file) {
                 const ifcURL = URL.createObjectURL(file);
                 await loadIfc(ifcURL);
-                updateSelectionInfo(null);
+                document.getElementById('properties-panel').style.display = 'none';
             }
         });
     }
+
+    // --- Inicialização ---
+    viewer = CreateViewer(container);
+    loadIfc('models/01.ifc'); // Carrega o modelo de teste (ajuste o caminho se necessário)
+
 });

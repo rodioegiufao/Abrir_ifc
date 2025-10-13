@@ -1,24 +1,100 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Visualizador IFC - Básico</title>
+    <title>Visualizador IFC - Propriedades</title>
+    <link rel="icon" type="image/png" href="./favicon.ico" />
+    
     <style>
-        body { 
-            margin: 0; 
-            padding: 0; 
-            font-family: Arial, sans-serif;
+        /* Estilos básicos para o viewer */
+        body {
+            margin: 0;
+            padding: 0;
             overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
         }
+
         #viewer-container {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100vw;
             height: 100vh;
         }
+
+        /* PAINEL DE PROPRIEDADES */
+        #properties-panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 350px;
+            max-height: 95vh;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            display: none; /* Inicia oculto */
+            font-size: 14px;
+        }
+        
+        #properties-panel h3 {
+            margin-top: 0;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 5px;
+            color: #007bff;
+        }
+        
+        #properties-panel h5 {
+            margin: 15px 0 5px 0;
+            color: #555;
+            font-weight: bold;
+        }
+        
+        #properties-panel ul {
+            list-style: none;
+            padding-left: 10px;
+        }
+        
+        #properties-panel li {
+            margin-bottom: 5px;
+            line-height: 1.4;
+        }
+        
+        .type-info {
+            font-style: italic;
+            color: #888;
+        }
+
+        /* Esconder botões de ocultar/exibir se não for usá-los */
+        #visibility-controls {
+            display: none;
+        }
     </style>
 </head>
+
 <body>
     <div id="viewer-container"></div>
+
+    <div id="properties-panel">
+        <h3 id="element-title">Propriedades do Elemento</h3>
+        <div id="element-details"></div>
+    </div>
+    
     <script type="module" src="./bundle.js"></script>
+
+    <div id="file-input-container" style="position: fixed; top: 10px; left: 10px; z-index: 2000;">
+        <label for="file-input" style="background: #007bff; color: white; padding: 8px 15px; border-radius: 4px; cursor: pointer;">
+            Abrir Arquivo IFC
+        </label>
+        <input type="file" id="file-input" style="display: none;">
+    </div>
 </body>
+
 </html>
