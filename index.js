@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES (TUDO VISÍVEL)
+    // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES (Corrigida: Tudo Visível)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -62,14 +62,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. PERCORRE E EXTRAI PROPRIEDADES
         if (props.psets && props.psets.length > 0) {
-            props.psets.forEach((pset, index) => {
+            props.psets.forEach((pset) => {
                 const psetName = pset.Name?.value || 'Pset Desconhecido';
                 const isAssociadosPset = psetName.includes("AltoQi_QiBuilder-Itens_Associados");
                 
-                // Se NÃO for o Pset de Associados, cria o cabeçalho normal
-                if (!isAssociadosPset) {
-                     psetsRestantesHTML += `<h5>${psetName}</h5><ul>`;
-                }
+                let currentPsetPropertiesHTML = '';
 
                 if (pset.HasProperties) {
                     pset.HasProperties.forEach(propHandle => {
@@ -95,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     .filter(line => line)
                                     .join('<br>');
                                 
+                                // Acumula na variável de Associados
                                 associadosHTML += `
                                     <li style="
                                         margin-left: -20px; 
@@ -106,17 +104,18 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <strong>${propName}:</strong><br>${items}
                                     </li>
                                 `;
-                            } else if (!isAssociadosPset) {
-                                // Exibe todas as outras propriedades nos Psets de origem
-                                psetsRestantesHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
+                            } else {
+                                // Acumula nas propriedades normais do Pset
+                                currentPsetPropertiesHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
                             }
                         }
                     });
                 }
                 
-                // Fecha UL para Psets normais
-                if (!isAssociadosPset) {
-                    psetsRestantesHTML += `</ul>`; 
+                // Adiciona o Pset ao HTML restante SOMENTE se não for o Pset de Associados
+                // e se ele tiver conteúdo para exibir.
+                if (!isAssociadosPset && currentPsetPropertiesHTML.length > 0) {
+                    psetsRestantesHTML += `<h5>${psetName}</h5><ul>${currentPsetPropertiesHTML}</ul>`;
                 }
             });
         } else {
@@ -135,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Adiciona a seção de Associados (se encontrada)
         if (associadosPsetFound) {
+            // Título fixo para o Pset de Associados
             finalDetailsHTML += '<h4>AltoQi_QiBuilder-Itens_Associados</h4>';
             finalDetailsHTML += `<ul style="margin-top: -10px;">${associadosHTML}</ul><hr>`;
         }
@@ -142,10 +142,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Adiciona os demais Psets
         finalDetailsHTML += psetsRestantesHTML;
 
-
         details.innerHTML = finalDetailsHTML;
         panel.style.display = 'block';
     }
+
+    // 🚨 REMOVA OU COMENTE A FUNÇÃO addToggleListeners (não é mais necessária)
+    // function addToggleListeners(...) { ... }
     
     // 🚨 A função addToggleListeners FOI REMOVIDA
     // -----------------------------------------------------------------
