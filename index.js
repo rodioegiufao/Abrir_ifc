@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadIfc(url) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
+        // Ajuste o caminho para o WASM se necessário
         await viewer.IFC.setWasmPath("/wasm/"); 
         const model = await viewer.IFC.loadIfcUrl(url);
         currentModelID = model.modelID;
@@ -35,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // =======================================================
     // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES DE FORMA FORMATADA
+    //    (Ajustada para a estrutura QiBuilder)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -43,37 +45,33 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!panel || !details) return;
 
-        // 1. EXTRAÇÃO DE INFORMAÇÕES BÁSICAS
+        // 1. INFORMAÇÕES BÁSICAS
         const elementTypeName = props.type[0]?.Name?.value || props.type[0]?.constructor.name || 'Elemento Desconhecido';
         const elementType = props.constructor.name;
         const elementName = props.Name?.value || elementTypeName;
 
         title.textContent = elementName;
-        let htmlContent = `
-            <h4>Informações Básicas</h4>
-            <p class="type-info"><strong>Tipo IFC:</strong> ${elementType}</p>
-            <p><strong>ID IFC:</strong> ${expressID}</p>
-            <p><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
-            <hr>
-            <h4>Conjuntos de Propriedades (Psets)</h4>
-        `;
+        
+        let identificacaoPrincipalHTML = '<h4>Identificação Principal</h4><ul>';
+        let psetsRestantesHTML = '<h4>Outros Psets e Informações</h4>';
+        
+        // Lista de nomes de propriedades que queremos extrair para o topo
+        const propriedadesPrincipais = ['Nome', 'Classe', 'Tipo', 'Rede', 'Aplicação', 'Descrição', 'Material', 'Diâmetro'];
+        let propriedadesPrincipaisEncontradas = [];
+        
 
-        // 2. EXTRAÇÃO DE PROPRIEDADES (psets)
+        // 2. PERCORRE E EXTRAI PROPRIEDADES
         if (props.psets && props.psets.length > 0) {
             props.psets.forEach(pset => {
                 const psetName = pset.Name?.value || 'Pset Desconhecido';
-                
-                // Aplica cor e negrito no Pset desejado
                 const isAssociadosPset = psetName.includes("AltoQi_QiBuilder-Itens_Associados");
-                const psetStyle = isAssociadosPset 
-                                  ? 'style="color: #007bff; font-weight: bold;"' 
-                                  : '';
-
-                htmlContent += `
-                    <h5 ${psetStyle}>${psetName}</h5>
+                
+                // Abre a lista do Pset (será adicionada a psetsRestantesHTML)
+                psetsRestantesHTML += `
+                    <h5 ${isAssociadosPset ? 'style="color: #007bff; font-weight: bold;"' : ''}>${psetName}</h5>
                     <ul>
                 `;
-
+                
                 if (pset.HasProperties) {
                     pset.HasProperties.forEach(propHandle => {
                         const prop = props[propHandle.value]; 
@@ -82,36 +80,48 @@ document.addEventListener('DOMContentLoaded', () => {
                             const propValue = prop.NominalValue.value;
                             const propName = prop.Name.value;
 
-                            // CRÍTICO: Tratamento para "Itens Associados" (quebra de linha)
+                            // Verifica se é uma propriedade a ser movida para o topo (Identificação Principal)
+                            if (propriedadesPrincipais.includes(propName) && !propriedadesPrincipaisEncontradas.includes(propName)) {
+                                propriedadesPrincipaisEncontradas.push(propName); // Previne duplicatas
+                                identificacaoPrincipalHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
+                            }
+                            
+                            // Trata Itens Associados (formatação multilinha)
                             if (isAssociadosPset && typeof propValue === 'string') {
-                                // Quebra a string por '\n', filtra linhas vazias e junta com <br>
                                 const items = propValue.split('\n').map(line => line.trim()).filter(line => line).join('<br>');
                                 
-                                htmlContent += `
+                                psetsRestantesHTML += `
                                     <li style="
                                         margin-left: -20px; 
                                         border-left: 3px solid #007bff; 
                                         padding-left: 10px;
-                                        white-space: pre-wrap; /* Garante quebras de linha */
+                                        white-space: pre-wrap;
                                     ">
                                         <strong>${propName}:</strong><br>${items}
                                     </li>
                                 `;
                             } else {
-                                // Exibe as propriedades de outros Psets
-                                htmlContent += `<li><strong>${propName}:</strong> ${propValue}</li>`;
+                                // Exibe todas as outras propriedades nos Psets de origem
+                                psetsRestantesHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
                             }
                         }
                     });
                 }
-                htmlContent += `</ul>`;
+                psetsRestantesHTML += `</ul>`;
             });
         } else {
-            htmlContent += `<p>Nenhum conjunto de propriedades (Psets) encontrado.</p>`;
+            psetsRestantesHTML = `<p>Nenhum conjunto de propriedades (Psets) encontrado.</p>`;
         }
+        
+        // Adiciona informações IFC básicas à seção principal
+        identificacaoPrincipalHTML += `
+            <p class="type-info"><strong>Tipo IFC:</strong> ${elementType}</p>
+            <p><strong>ID IFC:</strong> ${expressID}</p>
+            <p><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
+        </ul><hr>`;
 
-        // 3. EXIBE NO PAINEL
-        details.innerHTML = htmlContent;
+        // 3. MONTA E EXIBE O CONTEÚDO FINAL
+        details.innerHTML = identificacaoPrincipalHTML + psetsRestantesHTML;
         panel.style.display = 'block';
     }
 
@@ -142,17 +152,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // 1. Seleciona o item para destaque visual
         viewer.IFC.selector.unHighlightIfcItems();
         viewer.IFC.selector.highlightIfcItem(item, false);
         
-        // 2. Obtém as propriedades completas
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
-        // 🔹 SOLICITAÇÃO ATENDIDA: EXIBE NO CONSOLE O OBJETO COMPLETO
+        // SOLICITAÇÃO ATENDIDA: EXIBE NO CONSOLE O OBJETO COMPLETO
         console.log("🟩 Item selecionado (Objeto Completo):", props);
         
-        // 3. Chama a função para formatar e exibir no painel
         showProperties(props, item.id);
     };
 
