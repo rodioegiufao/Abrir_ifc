@@ -35,8 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES DE FORMA FORMATADA
-    //    (Com Identificação Principal e Pset de Associados Clicável)
+    // 🔹 FUNÇÃO PARA EXIBIR PROPRIEDADES (COM LÓGICA DE EXPANDIR CORRIGIDA)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -65,18 +64,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const psetName = pset.Name?.value || 'Pset Desconhecido';
                 const isAssociadosPset = psetName.includes("AltoQi_QiBuilder-Itens_Associados");
                 
-                // CRIA ID ÚNICO PARA A SEÇÃO (para expandir/contrair)
+                // CRIA ID ÚNICO PARA A SEÇÃO
                 const sectionID = `pset-content-${expressID}-${index}`;
-                const headerID = `pset-header-${expressID}-${index}`;
                 
-                // 🔹 HTML DO CABEÇALHO
+                // 🔹 HTML DO CABEÇALHO (MUDANÇA AQUI: ÍCONE SEPARADO)
                 psetsRestantesHTML += `
-                    <h5 id="${headerID}" 
-                        data-target="${sectionID}"
-                        ${isAssociadosPset ? 'class="clickable-header associados-header"' : ''}
-                        style="cursor: ${isAssociadosPset ? 'pointer' : 'default'}; user-select: none;"
+                    <h5 data-target="${sectionID}"
+                        class="${isAssociadosPset ? 'clickable-header' : ''}"
+                        style="cursor: ${isAssociadosPset ? 'pointer' : 'default'}; user-select: none; ${isAssociadosPset ? 'color: #007bff; font-weight: bold;' : ''}"
                     >
-                        ${psetName} ${isAssociadosPset ? ' (Clique para expandir) 🔽' : ''}
+                        ${psetName} ${isAssociadosPset ? ' <span class="toggle-icon">🔽</span>' : ''}
                     </h5>
                     <div id="${sectionID}" style="display: ${isAssociadosPset ? 'none' : 'block'};">
                     <ul>
@@ -117,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                 }
-                psetsRestantesHTML += `</ul></div>`; // Fecha UL e DIV (seção expansível)
+                psetsRestantesHTML += `</ul></div>`; 
             });
         } else {
             psetsRestantesHTML = `<p>Nenhum conjunto de propriedades (Psets) encontrado.</p>`;
@@ -137,23 +134,21 @@ document.addEventListener('DOMContentLoaded', () => {
         addToggleListeners(details);
     }
     
-    // 🔹 NOVA FUNÇÃO: Adiciona evento de clique para expandir/contrair
+    // 🔹 NOVA FUNÇÃO: Adiciona evento de clique para expandir/contrair (LÓGICA CORRIGIDA)
     function addToggleListeners(container) {
         const headers = container.querySelectorAll('.clickable-header');
         headers.forEach(header => {
             header.onclick = () => {
                 const targetId = header.getAttribute('data-target');
                 const targetElement = document.getElementById(targetId);
+                const icon = header.querySelector('.toggle-icon'); // Busca o ícone dentro do H5
                 
-                if (targetElement) {
+                if (targetElement && icon) {
                     const isVisible = targetElement.style.display === 'block';
                     targetElement.style.display = isVisible ? 'none' : 'block';
                     
-                    // Atualiza o ícone (opcional)
-                    header.innerHTML = header.innerHTML.replace(
-                        isVisible ? ' 🔽' : ' 🔼',
-                        isVisible ? ' 🔼' : ' 🔽'
-                    );
+                    // Atualiza o ícone (🔽 ou 🔼)
+                    icon.textContent = isVisible ? '🔽' : '🔼';
                 }
             };
         });
@@ -164,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadIfc('models/01.ifc'); // Altere a URL conforme necessário
 
     // =======================================================
-    // 🔹 EVENTO DE DUPLO CLIQUE
+    // 🔹 EVENTO DE DUPLO CLIQUE (PONTO DE ENTRADA)
     // =======================================================
     
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
@@ -189,11 +184,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
-        // Armazena para pesquisa no console
         lastProps = props; 
         console.log("🟩 Item selecionado (Objeto Completo):", lastProps);
         
-        // Chama a função atualizada
         showProperties(props, item.id);
     };
 
@@ -207,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Lógica de Upload de arquivo (Mantenha o seu código aqui)
+    // Lógica de Upload de arquivo 
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
