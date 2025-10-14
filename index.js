@@ -7,11 +7,8 @@ let lastProps = null;
 
 // 🚨 LISTA DE ARQUIVOS IFC - MULTIPLAS TENTATIVAS
 const IFC_MODELS_TO_LOAD = [
-    // Tentativa 1: Link direto com confirmação
-    'https://drive.google.com/uc?export=download&id=1jXglRbnyhLMYz23iJdXl8Rbsg8HiCJmW&confirm=t',
-    
-    // Tentativa 2: Arquivo local como fallback
     'models/01.ifc',
+    'models/02.ifc',
 ];
 
 // 🚨 FUNÇÃO PARA VERIFICAR DISPONIBILIDADE DO ARQUIVO
