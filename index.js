@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (COM CORREÇÃO)
+    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (COM CORREÇÃO PARA ^1.0.218)
     // =======================================================
     async function loadMultipleIfcs(urls) {
         if (viewer) await viewer.dispose();
@@ -50,12 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const model = await viewer.IFC.loadIfcUrl(url);
                 
-                // 💡 CORREÇÃO CRÍTICA AQUI: FORÇA O CARREGAMENTO DE TODAS AS PROPRIEDADES 
-                // Isso garante que os Handles (IDs internos) dentro dos Psets sejam resolvidos
-                // e os valores das propriedades possam ser recuperados.
-                const manager = viewer.IFC.loader.ifcManager;
-                await manager.loadAllProperties(model.modelID); 
-                console.log(`✅ Propriedades carregadas e resolvidas para o modelo: ${url}`);
+                // 💡 CORREÇÃO CRÍTICA AQUI: MÉTODO COMPATÍVEL COM ^1.0.218
+                // Força o cache do modelo a ser populado lendo o IfcProject (Express ID 1).
+                // Isso resolve o problema de "Handle não encontrado" na sua versão.
+                const ifcProject = await viewer.IFC.getSpatialStructure(model.modelID, false);
+                console.log(`✅ Cache populado lendo IfcProject (ID ${ifcProject.expressID}) para o modelo: ${url}`);
                 
                 viewer.shadowDropper.renderShadow(model.modelID);
                 loadedCount++;
@@ -250,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO showProperties (VERSÃO OTIMIZADA)
+    // 🔹 FUNÇÃO showProperties (OTIMIZADA)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -296,31 +295,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 let propertiesFound = false;
                 let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
 
-                // 🔥 MÉTODO PRINCIPAL: Itera sobre os Handles e busca no objeto de propriedades (agora populado)
+                // 🔥 BUSCA PROPRIEDADES NO OBJETO PRINCIPAL (props) ATRAVÉS DO HANDLE
                 if (pset.HasProperties && pset.HasProperties.length > 0) {
                     console.log(`📋 ${psetName} - HasProperties: (${pset.HasProperties.length}) [Handles]`);
                     
                     pset.HasProperties.forEach((propHandle, propIndex) => {
-                        
-                        // O valor do handle é o EXPRESS ID da entidade de propriedade (ex: IfcPropertySingleValue)
                         const propExpressID = propHandle.value;
-                        const prop = props[propExpressID]; // Acesso direto no cache populado por loadAllProperties()
-
+                        const prop = props[propExpressID]; // Acesso no cache populado
+                        
+                        // NOTE: Mesmo com a correção, esta versão da biblioteca pode falhar
+                        // se a busca recursiva no getProperties não for suficiente.
+                        
                         if (prop && prop.Name) {
                             propertiesFound = true;
                             const propName = prop.Name.value || 'Sem nome';
                             let propValue = 'N/A';
                             
-                            // Recupera o valor (NominalValue é o padrão para IfcPropertySingleValue)
+                            // Recupera o valor
                             if (prop.NominalValue && prop.NominalValue.value !== undefined) {
                                 propValue = prop.NominalValue.value;
-                            } else if (prop.Value && prop.Value.value !== undefined) { // Para outros tipos de propriedade
+                            } else if (prop.Value && prop.Value.value !== undefined) { 
                                 propValue = prop.Value.value;
                             }
                             
                             console.log(`   ✅ Propriedade encontrada (ID: ${propExpressID}): ${propName} = ${propValue}`);
                             propertiesHTML += formatProperty(propName, propValue);
                         } else {
+                            // Este é o erro que você estava vendo originalmente:
                             console.log(`   ❌ Propriedade não encontrada para handle: Handle {value: ${propExpressID}, type: 5}`);
                         }
                     });
@@ -332,7 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     htmlContent += propertiesHTML;
                     console.log(`✅ ${psetName}: PROPRIEDADES ENCONTRADAS!`);
                 } else {
-                    // Mensagem de aviso se a correção não funcionar por algum motivo (embora deva funcionar)
+                    // Mensagem de aviso se o carregamento falhar
                     htmlContent += `
                         <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 10px; margin: 5px 0;">
                             <p style="margin: 0 0 5px 0; color: #856404; font-size: 12px; font-weight: bold;">
@@ -374,7 +375,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (typeof propValue === 'string' && propValue.trim() === '') {
             propValue = '<em style="color: #6c757d;">(vazio)</em>';
         } else if (typeof propValue === 'object' && propValue.constructor.name !== 'Object') {
-             // Tenta extrair valor de objetos complexos (ex: IfcMeasureValue)
              propValue = propValue.value !== undefined ? propValue.value : JSON.stringify(propValue);
         }
         
@@ -404,18 +404,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // 🔹 EVENTOS DE INTERAÇÃO
     // =======================================================
     
-    // Pré-seleção ao mover o mouse
     window.onmousemove = () => viewer?.IFC?.selector?.prePickIfcItem();
 
-    // Duplo clique para seleção e exibição de propriedades
     window.ondblclick = async (event) => {
         if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
         
         event.preventDefault();
         event.stopPropagation();
         
-        // O 'true' indica pesquisa profunda (recursive), que funciona agora que as propriedades foram carregadas.
-        const item = await viewer.IFC.selector.pickIfcItem(true); 
+        const item = await viewer.IFC.selector.pickIfcItem(true);
 
         if (!item || item.modelID === undefined || item.id === undefined) {
             document.getElementById('properties-panel').style.display = 'none';
@@ -427,7 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.IFC.selector.unHighlightIfcItems();
         viewer.IFC.selector.highlightIfcItem(item, false);
         
-        // Pega as propriedades usando a pesquisa profunda (true)
+        // O parâmetro 'true' (pesquisa profunda/recursiva) funciona agora que forçamos o cache.
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
         lastProps = props; 
@@ -436,7 +433,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showProperties(props, item.id);
     };
 
-    // Tecla ESC para limpar seleção
     window.onkeydown = (event) => {
         if (event.code === 'Escape' && viewer?.IFC?.selector) {
             viewer.IFC.selector.unpickIfcItems();
@@ -459,5 +455,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
 });
