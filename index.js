@@ -5,23 +5,11 @@ let viewer;
 let currentModelID = -1;
 let lastProps = null;
 
-// 🚨 LISTA DE ARQUIVOS IFC - MULTIPLAS TENTATIVAS
+// ✅ LISTA SIMPLES DE ARQUIVOS IFC LOCAIS
 const IFC_MODELS_TO_LOAD = [
     'models/01.ifc',
     'models/02.ifc',
 ];
-
-// 🚨 FUNÇÃO PARA VERIFICAR DISPONIBILIDADE DO ARQUIVO
-async function checkFileAvailability(url) {
-    try {
-        const response = await fetch(url, { method: 'HEAD' });
-        console.log(`🔍 Status do arquivo ${url}: ${response.status}`);
-        return response.ok;
-    } catch (error) {
-        console.log(`❌ Arquivo não acessível: ${url}`);
-        return false;
-    }
-}
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -39,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (COM FALLBACK)
+    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (CORRIGIDA)
     // =======================================================
     async function loadMultipleIfcs(urls) {
         if (viewer) await viewer.dispose();
@@ -47,24 +35,15 @@ document.addEventListener('DOMContentLoaded', () => {
         await viewer.IFC.setWasmPath("/wasm/"); 
         
         currentModelID = -1;
-        console.log(`Iniciando carregamento de ${urls.length} modelos...`);
+        console.log(`🔄 Iniciando carregamento de ${urls.length} modelos...`);
 
-        let loadedAnyModel = false;
+        let loadedModels = 0;
+        let loadedModelIDs = [];
 
         for (const url of urls) {
             try {
-                console.log(`🔍 Verificando: ${url}`);
+                console.log(`📦 Tentando carregar: ${url}`);
                 
-                // Para arquivos locais, não faz verificação HEAD
-                if (url.startsWith('http')) {
-                    const isAvailable = await checkFileAvailability(url);
-                    if (!isAvailable) {
-                        console.log(`⏭️  Pulando arquivo não disponível: ${url}`);
-                        continue;
-                    }
-                }
-
-                console.log(`📦 Carregando: ${url}`);
                 const model = await viewer.IFC.loadIfcUrl(url);
                 
                 if (currentModelID === -1) {
@@ -72,37 +51,72 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 viewer.shadowDropper.renderShadow(model.modelID);
-                loadedAnyModel = true;
-                console.log(`✅ Sucesso ao carregar: ${url}`);
+                loadedModels++;
+                loadedModelIDs.push(model.modelID);
+                
+                console.log(`✅ Sucesso: ${url} (ID: ${model.modelID})`);
+                
+                // ✅ REMOVI O 'break' - AGORA CARREGA TODOS!
+                // Continua para o próximo arquivo
 
-                // Se carregou um, para aqui para não tentar os outros
-                break;
-
-            } catch (e) {
-                console.error(`❌ Falha ao carregar: ${url}`, e.message);
-                // Continua para a próxima URL
+            } catch (error) {
+                console.error(`❌ Falha ao carregar: ${url}`, error.message);
+                // Continua para a próxima URL mesmo com erro
             }
         }
 
-        if (!loadedAnyModel) {
+        if (loadedModels === 0) {
             console.error("🚨 Nenhum modelo IFC pôde ser carregado!");
-            console.log("💡 Soluções:");
-            console.log("   1. Verifique se o arquivo está compartilhado publicamente no Google Drive");
-            console.log("   2. Use um servidor local para servir o arquivo IFC");
-            console.log("   3. Coloque o arquivo IFC na pasta 'models' do seu projeto");
+            showErrorMessage();
             return;
         }
         
-        // Ajuste da câmera
+        // Ajuste da câmera para visualizar todos os modelos
         const scene = viewer.context.getScene();
         await new Promise(resolve => setTimeout(resolve, 100));
         viewer.context.ifcCamera.cameraControls.fitToBox(scene, true, 0.5, true);
 
-        console.log("✅ Modelos IFC carregados com sucesso.");
+        console.log(`🎉 ${loadedModels}/${urls.length} modelos carregados com sucesso!`);
+        console.log(`📊 IDs dos modelos: ${loadedModelIDs.join(', ')}`);
+    }
+
+    // 🔹 MENSAGEM DE ERRO SIMPLES
+    function showErrorMessage() {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 400px;
+            text-align: center;
+            z-index: 10000;
+        `;
+        
+        errorDiv.innerHTML = `
+            <h3 style="color: #721c24; margin-top: 0;">⚠️ Arquivos IFC Não Encontrados</h3>
+            <p style="color: #721c24;">
+                Verifique se os arquivos estão na pasta 'models/':
+            </p>
+            <ul style="text-align: left; color: #721c24;">
+                <li>01.ifc</li>
+                <li>02.ifc</li>
+            </ul>
+            <button onclick="this.parentElement.remove()" 
+                    style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px;">
+                Fechar
+            </button>
+        `;
+        
+        document.body.appendChild(errorDiv);
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO showProperties (VERSÃO CORRIGIDA)
+    // 🔹 FUNÇÃO showProperties (MANTIDA)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -153,14 +167,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         </h5>
                 `;
 
-                // 🔥 CORREÇÃO: VERIFICAR DIFERENTES ESTRUTURAS DE PROPRIEDADES
+                // PROCESSAR PROPRIEDADES
                 let propertiesFound = false;
                 let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
 
-                // MÉTODO 1: HasProperties (estrutura mais comum)
+                // MÉTODO 1: HasProperties
                 if (pset.HasProperties && pset.HasProperties.length > 0) {
-                    console.log(`🔍 Processando Pset "${psetName}" via HasProperties:`, pset.HasProperties);
-                    
                     pset.HasProperties.forEach(propHandle => {
                         const prop = props[propHandle.value];
                         
@@ -173,41 +185,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                 }
-                
-                // MÉTODO 2: Propriedades diretas no Pset
-                if (!propertiesFound) {
-                    console.log(`🔍 Tentando método alternativo para Pset "${psetName}":`, pset);
-                    
-                    // Procura por propriedades diretamente no objeto pset
-                    for (const [key, value] of Object.entries(pset)) {
-                        if (key !== 'Name' && key !== 'Description' && key !== 'HasProperties' && 
-                            key !== 'expressID' && key !== 'type' && value && value.value !== undefined) {
-                            propertiesFound = true;
-                            propertiesHTML += formatProperty(key, value.value);
-                        }
-                    }
-                }
-                
-                // MÉTODO 3: Verifica se há propriedades em outros locais
-                if (!propertiesFound && pset.properties) {
-                    console.log(`🔍 Tentando método properties para Pset "${psetName}":`, pset.properties);
-                    
-                    for (const [propName, propValue] of Object.entries(pset.properties)) {
-                        if (propValue !== null && propValue !== undefined) {
-                            propertiesFound = true;
-                            propertiesHTML += formatProperty(propName, propValue);
-                        }
-                    }
-                }
 
                 propertiesHTML += '</ul>';
                 
                 if (propertiesFound) {
                     htmlContent += propertiesHTML;
-                    console.log(`✅ Pset "${psetName}": ${propertiesFound} propriedades encontradas`);
                 } else {
                     htmlContent += '<p style="color: #6c757d; margin: 5px 0;">Nenhuma propriedade encontrada neste Pset</p>';
-                    console.log(`❌ Pset "${psetName}": Nenhuma propriedade encontrada em nenhum método`);
                 }
                 
                 htmlContent += `</div>`;
@@ -225,31 +209,19 @@ document.addEventListener('DOMContentLoaded', () => {
         details.innerHTML = htmlContent;
         panel.style.display = 'block';
         
-        // 5. LOG NO CONSOLE PARA DEBUG
         console.log(`📋 Elemento selecionado: ${elementName} (${elementType})`);
-        console.log(`📊 Total de Psets: ${props.psets ? props.psets.length : 0}`);
-        if (props.psets) {
-            props.psets.forEach((pset, index) => {
-                const psetName = pset.Name?.value || `Pset ${index + 1}`;
-                console.log(`   - ${psetName}:`, pset);
-            });
-        }
     }
 
     // 🔥 FUNÇÃO AUXILIAR PARA FORMATAR PROPRIEDADES
     function formatProperty(propName, propValue) {
-        // FORMATAR VALORES ESPECIAIS
         if (typeof propValue === 'boolean') {
             propValue = propValue ? '✅ Sim' : '❌ Não';
         } else if (propValue === null || propValue === undefined) {
             propValue = '<em style="color: #6c757d;">N/A</em>';
         } else if (typeof propValue === 'string' && propValue.trim() === '') {
             propValue = '<em style="color: #6c757d;">(vazio)</em>';
-        } else if (typeof propValue === 'object') {
-            propValue = JSON.stringify(propValue).substring(0, 100) + '...';
         }
         
-        // DESTACAR PROPRIEDADES IMPORTANTES
         const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código', 'Quantidade', 'Preço'].includes(propName);
         const propStyle = isImportant ? 'font-weight: bold; color: #e83e8c;' : '';
         
@@ -261,19 +233,19 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
-    // 🚨 CHAMADA PRINCIPAL COM TRY-CATCH
+    // 🚀 INICIALIZAÇÃO SIMPLES
     async function initializeViewer() {
         try {
             await loadMultipleIfcs(IFC_MODELS_TO_LOAD);
         } catch (error) {
-            console.error("🚨 Erro crítico ao inicializar o visualizador:", error);
+            console.error("🚨 Erro ao inicializar o visualizador:", error);
         }
     }
 
     initializeViewer();
 
     // =======================================================
-    // 🔹 EVENTO DE DUPLO CLIQUE 
+    // 🔹 EVENTOS DE INTERAÇÃO
     // =======================================================
     
     window.onmousemove = () => viewer?.IFC?.selector?.prePickIfcItem();
@@ -299,12 +271,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
         lastProps = props; 
-        console.log("🟩 Item selecionado (Objeto Completo):", lastProps);
+        console.log("🟩 Item selecionado:", lastProps);
         
         showProperties(props, item.id);
     };
 
-    // Atalhos do teclado (Limpar seleção ao apertar ESC)
     window.onkeydown = (event) => {
         if (event.code === 'Escape' && viewer?.IFC?.selector) {
             viewer.IFC.selector.unpickIfcItems();
@@ -314,14 +285,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Lógica de Upload de arquivo local (mantida como fallback)
+    // UPLOAD DE ARQUIVO LOCAL
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
             const file = changed.target.files[0];
             if (file) {
                 const ifcURL = URL.createObjectURL(file);
-                // Para carregar um arquivo local, usamos a função de múltiplos com um só item
                 await loadMultipleIfcs([ifcURL]); 
                 document.getElementById('properties-panel').style.display = 'none';
                 lastProps = null;
