@@ -3,13 +3,18 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
 let currentModelID = -1;
-let lastProps = null; // Variável global para pesquisa no console
+let lastProps = null;
+
+// ✅ LISTA SIMPLES DE ARQUIVOS IFC LOCAIS
+const IFC_MODELS_TO_LOAD = [
+    'models/01.ifc',
+    'models/02.ifc',
+];
 
 document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
-    // --- Cria o viewer ---
     function CreateViewer(container) {
         const newViewer = new IfcViewerAPI({
             container,
@@ -21,21 +26,97 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Carrega um IFC ---
-    async function loadIfc(url) {
+    // =======================================================
+    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (CORRIGIDA)
+    // =======================================================
+    async function loadMultipleIfcs(urls) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
         await viewer.IFC.setWasmPath("/wasm/"); 
-        const model = await viewer.IFC.loadIfcUrl(url);
-        currentModelID = model.modelID;
         
-        viewer.shadowDropper.renderShadow(currentModelID);
-        console.log("✅ Modelo IFC carregado com ID:", currentModelID);
-        return model;
+        currentModelID = -1;
+        console.log(`🔄 Iniciando carregamento de ${urls.length} modelos...`);
+
+        let loadedModels = 0;
+        let loadedModelIDs = [];
+
+        for (const url of urls) {
+            try {
+                console.log(`📦 Tentando carregar: ${url}`);
+                
+                const model = await viewer.IFC.loadIfcUrl(url);
+                
+                if (currentModelID === -1) {
+                    currentModelID = model.modelID;
+                }
+                
+                viewer.shadowDropper.renderShadow(model.modelID);
+                loadedModels++;
+                loadedModelIDs.push(model.modelID);
+                
+                console.log(`✅ Sucesso: ${url} (ID: ${model.modelID})`);
+                
+                // ✅ REMOVI O 'break' - AGORA CARREGA TODOS!
+                // Continua para o próximo arquivo
+
+            } catch (error) {
+                console.error(`❌ Falha ao carregar: ${url}`, error.message);
+                // Continua para a próxima URL mesmo com erro
+            }
+        }
+
+        if (loadedModels === 0) {
+            console.error("🚨 Nenhum modelo IFC pôde ser carregado!");
+            showErrorMessage();
+            return;
+        }
+        
+        // Ajuste da câmera para visualizar todos os modelos
+        const scene = viewer.context.getScene();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        viewer.context.ifcCamera.cameraControls.fitToBox(scene, true, 0.5, true);
+
+        console.log(`🎉 ${loadedModels}/${urls.length} modelos carregados com sucesso!`);
+        console.log(`📊 IDs dos modelos: ${loadedModelIDs.join(', ')}`);
+    }
+
+    // 🔹 MENSAGEM DE ERRO SIMPLES
+    function showErrorMessage() {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 400px;
+            text-align: center;
+            z-index: 10000;
+        `;
+        
+        errorDiv.innerHTML = `
+            <h3 style="color: #721c24; margin-top: 0;">⚠️ Arquivos IFC Não Encontrados</h3>
+            <p style="color: #721c24;">
+                Verifique se os arquivos estão na pasta 'models/':
+            </p>
+            <ul style="text-align: left; color: #721c24;">
+                <li>01.ifc</li>
+                <li>02.ifc</li>
+            </ul>
+            <button onclick="this.parentElement.remove()" 
+                    style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px;">
+                Fechar
+            </button>
+        `;
+        
+        document.body.appendChild(errorDiv);
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO showProperties (VERSÃO COMPLETA - TODOS OS PSETS)
+    // 🔹 FUNÇÃO showProperties (MANTIDA)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -86,11 +167,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         </h5>
                 `;
 
-                // PROCESSAR PROPRIEDADES DESTE PSET
+                // PROCESSAR PROPRIEDADES
+                let propertiesFound = false;
+                let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
+
+                // MÉTODO 1: HasProperties
                 if (pset.HasProperties && pset.HasProperties.length > 0) {
-                    let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
-                    let propertiesFound = false;
-                    
                     pset.HasProperties.forEach(propHandle => {
                         const prop = props[propHandle.value];
                         
@@ -99,37 +181,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             const propName = prop.Name.value;
                             let propValue = prop.NominalValue.value;
                             
-                            // FORMATAR VALORES ESPECIAIS
-                            if (typeof propValue === 'boolean') {
-                                propValue = propValue ? '✅ Sim' : '❌ Não';
-                            } else if (propValue === null || propValue === undefined) {
-                                propValue = '<em style="color: #6c757d;">N/A</em>';
-                            } else if (typeof propValue === 'string' && propValue.trim() === '') {
-                                propValue = '<em style="color: #6c757d;">(vazio)</em>';
-                            }
-                            
-                            // DESTACAR PROPRIEDADES IMPORTANTES
-                            const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código'].includes(propName);
-                            const propStyle = isImportant ? 'font-weight: bold; color: #e83e8c;' : '';
-                            
-                            propertiesHTML += `
-                                <li style="margin-bottom: 6px; padding: 3px 0; border-bottom: 1px dotted #f0f0f0;">
-                                    <span style="${propStyle}">${propName}:</span> 
-                                    <span style="float: right; text-align: right; max-width: 60%; word-break: break-word;">${propValue}</span>
-                                </li>
-                            `;
+                            propertiesHTML += formatProperty(propName, propValue);
                         }
                     });
-                    
-                    propertiesHTML += '</ul>';
-                    
-                    if (propertiesFound) {
-                        htmlContent += propertiesHTML;
-                    } else {
-                        htmlContent += '<p style="color: #6c757d; margin: 5px 0;">Nenhuma propriedade encontrada neste Pset</p>';
-                    }
+                }
+
+                propertiesHTML += '</ul>';
+                
+                if (propertiesFound) {
+                    htmlContent += propertiesHTML;
                 } else {
-                    htmlContent += '<p style="color: #6c757d; margin: 5px 0;">Este Pset não contém propriedades</p>';
+                    htmlContent += '<p style="color: #6c757d; margin: 5px 0;">Nenhuma propriedade encontrada neste Pset</p>';
                 }
                 
                 htmlContent += `</div>`;
@@ -143,55 +205,56 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
-        // 4. INFORMAÇÕES ADICIONAIS (se disponíveis)
-        const additionalInfo = [];
-        
-        if (props.mats && props.mats.length > 0) {
-            additionalInfo.push(`<strong>Materiais:</strong> ${props.mats.length} definidos`);
-        }
-        
-        if (additionalInfo.length > 0) {
-            htmlContent += `
-                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #dee2e6;">
-                    <h5 style="color: #6c757d; margin-bottom: 8px;">Informações Adicionais</h5>
-                    <ul style="color: #6c757d; list-style: none; padding-left: 0;">
-                        ${additionalInfo.map(info => `<li>${info}</li>`).join('')}
-                    </ul>
-                </div>
-            `;
-        }
-
-        // 5. EXIBIR NO PAINEL
+        // 4. EXIBIR NO PAINEL
         details.innerHTML = htmlContent;
         panel.style.display = 'block';
         
-        // 6. LOG NO CONSOLE PARA DEBUG
         console.log(`📋 Elemento selecionado: ${elementName} (${elementType})`);
-        console.log(`📊 Total de Psets: ${props.psets ? props.psets.length : 0}`);
-        if (props.psets) {
-            props.psets.forEach((pset, index) => {
-                const psetName = pset.Name?.value || `Pset ${index + 1}`;
-                const propCount = pset.HasProperties ? pset.HasProperties.length : 0;
-                console.log(`   - ${psetName}: ${propCount} propriedades`);
-            });
+    }
+
+    // 🔥 FUNÇÃO AUXILIAR PARA FORMATAR PROPRIEDADES
+    function formatProperty(propName, propValue) {
+        if (typeof propValue === 'boolean') {
+            propValue = propValue ? '✅ Sim' : '❌ Não';
+        } else if (propValue === null || propValue === undefined) {
+            propValue = '<em style="color: #6c757d;">N/A</em>';
+        } else if (typeof propValue === 'string' && propValue.trim() === '') {
+            propValue = '<em style="color: #6c757d;">(vazio)</em>';
+        }
+        
+        const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código', 'Quantidade', 'Preço'].includes(propName);
+        const propStyle = isImportant ? 'font-weight: bold; color: #e83e8c;' : '';
+        
+        return `
+            <li style="margin-bottom: 6px; padding: 3px 0; border-bottom: 1px dotted #f0f0f0;">
+                <span style="${propStyle}">${propName}:</span> 
+                <span style="float: right; text-align: right; max-width: 60%; word-break: break-word;">${propValue}</span>
+            </li>
+        `;
+    }
+
+    // 🚀 INICIALIZAÇÃO SIMPLES
+    async function initializeViewer() {
+        try {
+            await loadMultipleIfcs(IFC_MODELS_TO_LOAD);
+        } catch (error) {
+            console.error("🚨 Erro ao inicializar o visualizador:", error);
         }
     }
 
-    // --- Inicialização ---
-    viewer = CreateViewer(container);
-    loadIfc('models/01.ifc');
+    initializeViewer();
 
     // =======================================================
-    // 🔹 EVENTO DE DUPLO CLIQUE
+    // 🔹 EVENTOS DE INTERAÇÃO
     // =======================================================
     
-    window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
+    window.onmousemove = () => viewer?.IFC?.selector?.prePickIfcItem();
 
     window.ondblclick = async (event) => {
+        if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
+        
         event.preventDefault();
         event.stopPropagation();
-        
-        if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
         
         const item = await viewer.IFC.selector.pickIfcItem(true);
 
@@ -207,16 +270,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
-        // Armazena para pesquisa no console
         lastProps = props; 
-        console.log("🟩 Item selecionado (Objeto Completo):", lastProps);
+        console.log("🟩 Item selecionado:", lastProps);
         
         showProperties(props, item.id);
     };
 
-    // Atalhos do teclado
     window.onkeydown = (event) => {
-        if (event.code === 'Escape') {
+        if (event.code === 'Escape' && viewer?.IFC?.selector) {
             viewer.IFC.selector.unpickIfcItems();
             viewer.IFC.selector.unHighlightIfcItems();
             document.getElementById('properties-panel').style.display = 'none';
@@ -224,14 +285,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Upload de arquivo 
+    // UPLOAD DE ARQUIVO LOCAL
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
             const file = changed.target.files[0];
             if (file) {
                 const ifcURL = URL.createObjectURL(file);
-                await loadIfc(ifcURL);
+                await loadMultipleIfcs([ifcURL]); 
                 document.getElementById('properties-panel').style.display = 'none';
                 lastProps = null;
             }
