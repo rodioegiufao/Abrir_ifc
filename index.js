@@ -3,10 +3,20 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
 let currentModelID = -1;
-let lastProps = null; // Variável global para pesquisa no console
+let lastProps = null; // Variável global para debug
 
-// 🔥 LINK FIXO DO GOOGLE DRIVE
-const GOOGLE_DRIVE_IFC_LINK = 'https://drive.google.com/uc?export=download&id=1xL_PtfapP_pgZ9HczojDj8lTPIv_3NLS';
+// 🚨 1. LISTA DE ARQUIVOS IFC PARA CARREGAR
+// VOCÊ DEVE PREENCHER ESTA LISTA COM AS URLS DE DOWNLOAD DIRETO dos seus arquivos.
+const IFC_MODELS_TO_LOAD = [
+    // Exemplo de como carregar um arquivo local (dentro da pasta /models)
+    'models/01.ifc', 
+    
+    // Se você tiver mais modelos, adicione-os aqui.
+    // Exemplo de como seria um link do Google Drive (o link deve ser de download direto!)
+    // 'https://drive.google.com/uc?export=download&id=SEU_ID_DO_IFC_DA_ESTRUTURA',
+    // 'https://drive.google.com/uc?export=download&id=SEU_ID_DO_IFC_DA_INSTALACAO_1',
+];
+
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -24,36 +34,45 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // --- Carrega um IFC ---
-    async function loadIfc(url) {
+    // =======================================================
+    // 🔹 NOVA FUNÇÃO: CARREGAR MÚLTIPLOS IFCs
+    // =======================================================
+    async function loadMultipleIfcs(urls) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
         await viewer.IFC.setWasmPath("/wasm/"); 
-        const model = await viewer.IFC.loadIfcUrl(url);
-        currentModelID = model.modelID;
         
-        viewer.shadowDropper.renderShadow(currentModelID);
-        console.log("✅ Modelo IFC carregado com ID:", currentModelID);
-        return model;
-    }
+        // Zera o ID principal. O primeiro modelo carregado definirá o currentModelID.
+        currentModelID = -1;
 
-    // 🔥 FUNÇÃO PARA CARREGAR DO GOOGLE DRIVE
-    async function loadIfcFromGoogleDrive() {
-        try {
-            console.log('🔄 Carregando IFC do Google Drive...');
-            console.log('🔗 Link:', GOOGLE_DRIVE_IFC_LINK);
-            
-            await loadIfc(GOOGLE_DRIVE_IFC_LINK);
-            
-            console.log('✅ IFC carregado do Google Drive com sucesso!');
-        } catch (error) {
-            console.error('❌ Erro ao carregar do Google Drive:', error);
-            alert('Erro ao carregar arquivo do Google Drive. Verifique o console para mais detalhes.');
+        console.log(`Iniciando carregamento de ${urls.length} modelos...`);
+
+        for (const url of urls) {
+            try {
+                console.log(`Carregando: ${url}`);
+                const model = await viewer.IFC.loadIfcUrl(url);
+                
+                // O modelo principal (para seleção e corte) será o primeiro carregado
+                if (currentModelID === -1) {
+                    currentModelID = model.modelID;
+                }
+                
+                // Opção para sombras (se houver problemas de performance, comente esta linha)
+                viewer.shadowDropper.renderShadow(model.modelID); 
+
+            } catch (e) {
+                console.error(`Falha ao carregar o arquivo IFC em: ${url}`, e);
+            }
         }
-    }
+        
+        // Ajusta a câmera para enquadrar todos os modelos
+        viewer.context.ifcCamera.cameraControls.fitToBox(true, 0.5, true); 
 
+        console.log("✅ Todos os modelos IFC carregados com sucesso.");
+    }
+    
     // =======================================================
-    // 🔹 FUNÇÃO showProperties (VERSÃO CORRIGIDA)
+    // 🔹 FUNÇÃO showProperties (Versão Robusta: TUDO VISÍVEL)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -65,161 +84,117 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 1. INFORMAÇÕES BÁSICAS DO ELEMENTO
+        // 1. EXTRAÇÃO DE DADOS BÁSICOS
         const elementTypeName = props.type[0]?.Name?.value || props.type[0]?.constructor.name || 'Elemento Desconhecido';
         const elementType = props.constructor.name;
         const elementName = props.Name?.value || elementTypeName;
 
         title.textContent = elementName;
         
-        let htmlContent = '';
+        let identificacaoPrincipalHTML = '<h4>Identificação Principal</h4><ul>';
+        let psetsRestantesHTML = '<h4>Outros Psets e Informações</h4>';
+        
+        const propriedadesPrincipais = ['Nome', 'Classe', 'Tipo', 'Rede', 'Aplicação', 'Descrição', 'Material', 'Diâmetro'];
+        let propriedadesPrincipaisEncontradas = [];
+        
+        let associadosHTML = '';
+        let associadosPsetFound = false;
 
-        // 2. CABEÇALHO COM INFORMAÇÕES PRINCIPAIS
-        htmlContent += `
-            <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-                <h4 style="margin: 0 0 8px 0; color: #007bff;">Informações Gerais</h4>
-                <p style="margin: 4px 0;"><strong>Tipo IFC:</strong> ${elementType}</p>
-                <p style="margin: 4px 0;"><strong>Nome:</strong> ${elementName}</p>
-                <p style="margin: 4px 0;"><strong>ID IFC:</strong> ${expressID}</p>
-                <p style="margin: 4px 0;"><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
-                ${props.Description?.value ? `<p style="margin: 4px 0;"><strong>Descrição:</strong> ${props.Description.value}</p>` : ''}
-                ${props.ObjectType?.value ? `<p style="margin: 4px 0;"><strong>Tipo de Objeto:</strong> ${props.ObjectType.value}</p>` : ''}
-                ${props.Tag?.value ? `<p style="margin: 4px 0;"><strong>Tag:</strong> ${props.Tag.value}</p>` : ''}
-            </div>
-        `;
-
-        // 3. PROCESSAR TODOS OS PSETS
+        // 2. PERCORRE TODOS OS PSETS
         if (props.psets && props.psets.length > 0) {
-            htmlContent += `<h4 style="color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 5px;">Conjuntos de Propriedades (${props.psets.length} Psets)</h4>`;
-            
-            props.psets.forEach((pset, index) => {
-                const psetName = pset.Name?.value || `Pset ${index + 1}`;
-                const psetDescription = pset.Description?.value || '';
+            props.psets.forEach((pset) => {
+                const psetName = pset.Name?.value || 'Pset Desconhecido';
+                // 🚨 Uso o 'includes' flexível para evitar erros de prefixo
+                const isAssociadosPset = psetName && psetName.includes("Itens_Associados");
                 
-                htmlContent += `
-                    <div style="background: white; border: 1px solid #ddd; border-radius: 5px; padding: 12px; margin-bottom: 15px;">
-                        <h5 style="margin: 0 0 8px 0; color: #495057; font-size: 1.1em;">
-                            ${psetName}
-                            ${psetDescription ? `<br><small style="color: #6c757d; font-weight: normal;">${psetDescription}</small>` : ''}
-                        </h5>
-                `;
+                let currentPsetPropertiesHTML = '';
 
-                // 🔥 CORREÇÃO: VERIFICAR DIFERENTES ESTRUTURAS DE PROPRIEDADES
-                let propertiesFound = false;
-                let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
-
-                // MÉTODO 1: HasProperties (estrutura mais comum)
-                if (pset.HasProperties && pset.HasProperties.length > 0) {
-                    console.log(`🔍 Processando Pset "${psetName}" via HasProperties:`, pset.HasProperties);
-                    
+                if (pset.HasProperties) {
                     pset.HasProperties.forEach(propHandle => {
-                        const prop = props[propHandle.value];
-                        
+                        const prop = props[propHandle.value]; 
+
                         if (prop && prop.Name && prop.NominalValue) {
-                            propertiesFound = true;
+                            const propValue = prop.NominalValue.value;
                             const propName = prop.Name.value;
-                            let propValue = prop.NominalValue.value;
+
+                            // Se é uma propriedade principal, move para o topo
+                            if (propriedadesPrincipais.includes(propName) && !propriedadesPrincipaisEncontradas.includes(propName)) {
+                                propriedadesPrincipaisEncontradas.push(propName);
+                                identificacaoPrincipalHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
+                            }
                             
-                            propertiesHTML += formatProperty(propName, propValue);
+                            // 🔹 TRATA ITENS ASSOCIADOS
+                            else if (isAssociadosPset && typeof propValue === 'string') {
+                                associadosPsetFound = true;
+                                
+                                // Formatação multilinha para o insumo
+                                const items = propValue.split('\n')
+                                    .map(line => line.trim())
+                                    .filter(line => line)
+                                    .join('<br>');
+                                
+                                // Acumula na variável de Associados
+                                associadosHTML += `
+                                    <li style="
+                                        margin-left: -20px; 
+                                        border-left: 3px solid #007bff; 
+                                        padding-left: 10px;
+                                        white-space: pre-wrap;
+                                        margin-top: 10px;
+                                    ">
+                                        <strong>${propName}:</strong><br>${items}
+                                    </li>
+                                `;
+                            } else {
+                                // Se NÃO é de Associados e NÃO é principal, acumula no Pset normal
+                                currentPsetPropertiesHTML += `<li><strong>${propName}:</strong> ${propValue}</li>`;
+                            }
                         }
                     });
                 }
                 
-                // MÉTODO 2: Propriedades diretas no Pset
-                if (!propertiesFound) {
-                    console.log(`🔍 Tentando método alternativo para Pset "${psetName}":`, pset);
-                    
-                    // Procura por propriedades diretamente no objeto pset
-                    for (const [key, value] of Object.entries(pset)) {
-                        if (key !== 'Name' && key !== 'Description' && key !== 'HasProperties' && 
-                            key !== 'expressID' && key !== 'type' && value && value.value !== undefined) {
-                            propertiesFound = true;
-                            propertiesHTML += formatProperty(key, value.value);
-                        }
-                    }
+                // Adiciona o Pset ao HTML restante SOMENTE se não for o Pset de Associados
+                if (!isAssociadosPset && currentPsetPropertiesHTML.length > 0) {
+                    psetsRestantesHTML += `<h5>${psetName}</h5><ul>${currentPsetPropertiesHTML}</ul>`;
                 }
-                
-                // MÉTODO 3: Verifica se há propriedades em outros locais
-                if (!propertiesFound && pset.properties) {
-                    console.log(`🔍 Tentando método properties para Pset "${psetName}":`, pset.properties);
-                    
-                    for (const [propName, propValue] of Object.entries(pset.properties)) {
-                        if (propValue !== null && propValue !== undefined) {
-                            propertiesFound = true;
-                            propertiesHTML += formatProperty(propName, propValue);
-                        }
-                    }
-                }
-
-                propertiesHTML += '</ul>';
-                
-                if (propertiesFound) {
-                    htmlContent += propertiesHTML;
-                    console.log(`✅ Pset "${psetName}": ${propertiesFound} propriedades encontradas`);
-                } else {
-                    htmlContent += '<p style="color: #6c757d; margin: 5px 0;">Nenhuma propriedade encontrada neste Pset</p>';
-                    console.log(`❌ Pset "${psetName}": Nenhuma propriedade encontrada em nenhum método`);
-                }
-                
-                htmlContent += `</div>`;
             });
-        } else {
-            htmlContent += `
-                <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; text-align: center;">
-                    <h5 style="margin: 0; color: #856404;">⚠️ Nenhum Pset Encontrado</h5>
-                    <p style="margin: 5px 0 0 0; color: #856404;">Este elemento não possui conjuntos de propriedades (Psets) definidos.</p>
-                </div>
-            `;
+        }
+        
+        // 3. MONTAGEM DO HTML FINAL
+        
+        // Finaliza o HTML de Identificação
+        identificacaoPrincipalHTML += `
+            <p class="type-info"><strong>Tipo IFC:</strong> ${elementType}</p>
+            <p><strong>ID IFC:</strong> ${expressID}</p>
+            <p><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
+        </ul><hr>`;
+
+        let finalDetailsHTML = identificacaoPrincipalHTML;
+        
+        // 🔹 3A. ADICIONA A SEÇÃO DE ASSOCIADOS (PRIORIDADE)
+        if (associadosPsetFound) {
+            finalDetailsHTML += '<h4>AltoQi_QiBuilder-Itens_Associados</h4>';
+            finalDetailsHTML += `<ul style="margin-top: -10px;">${associadosHTML}</ul><hr>`;
+        }
+        
+        // 🔹 3B. ADICIONA OS DEMAIS PSETS
+        finalDetailsHTML += psetsRestantesHTML;
+        
+        if (!props.psets || props.psets.length === 0) {
+            finalDetailsHTML += `<p>Nenhum conjunto de propriedades (Psets) encontrado.</p>`;
         }
 
-        // 4. EXIBIR NO PAINEL
-        details.innerHTML = htmlContent;
+        // 4. EXIBE O PAINEL
+        details.innerHTML = finalDetailsHTML;
         panel.style.display = 'block';
-        
-        // 5. LOG NO CONSOLE PARA DEBUG
-        console.log(`📋 Elemento selecionado: ${elementName} (${elementType})`);
-        console.log(`📊 Total de Psets: ${props.psets ? props.psets.length : 0}`);
-        if (props.psets) {
-            props.psets.forEach((pset, index) => {
-                const psetName = pset.Name?.value || `Pset ${index + 1}`;
-                console.log(`   - ${psetName}:`, pset);
-            });
-        }
     }
 
-    // 🔥 FUNÇÃO AUXILIAR PARA FORMATAR PROPRIEDADES
-    function formatProperty(propName, propValue) {
-        // FORMATAR VALORES ESPECIAIS
-        if (typeof propValue === 'boolean') {
-            propValue = propValue ? '✅ Sim' : '❌ Não';
-        } else if (propValue === null || propValue === undefined) {
-            propValue = '<em style="color: #6c757d;">N/A</em>';
-        } else if (typeof propValue === 'string' && propValue.trim() === '') {
-            propValue = '<em style="color: #6c757d;">(vazio)</em>';
-        } else if (typeof propValue === 'object') {
-            propValue = JSON.stringify(propValue).substring(0, 100) + '...';
-        }
-        
-        // DESTACAR PROPRIEDADES IMPORTANTES
-        const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código', 'Quantidade', 'Preço'].includes(propName);
-        const propStyle = isImportant ? 'font-weight: bold; color: #e83e8c;' : '';
-        
-        return `
-            <li style="margin-bottom: 6px; padding: 3px 0; border-bottom: 1px dotted #f0f0f0;">
-                <span style="${propStyle}">${propName}:</span> 
-                <span style="float: right; text-align: right; max-width: 60%; word-break: break-word;">${propValue}</span>
-            </li>
-        `;
-    }
-
-    // --- Inicialização ---
-    viewer = CreateViewer(container);
-    
-    // 🔥 CARREGA DIRETAMENTE DO GOOGLE DRIVE
-    loadIfcFromGoogleDrive();
+    // 🚨 2. CHAMADA PRINCIPAL
+    // Substitui a chamada loadIfc antiga pela nova
+    loadMultipleIfcs(IFC_MODELS_TO_LOAD);
 
     // =======================================================
-    // 🔹 EVENTO DE DUPLO CLIQUE
+    // 🔹 EVENTO DE DUPLO CLIQUE (INALTERADO)
     // =======================================================
     
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
@@ -230,6 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
         
+        // Note: Com múltiplos modelos, o item retornado terá o modelID correto
         const item = await viewer.IFC.selector.pickIfcItem(true);
 
         if (!item || item.modelID === undefined || item.id === undefined) {
@@ -244,14 +220,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
-        // Armazena para pesquisa no console
         lastProps = props; 
         console.log("🟩 Item selecionado (Objeto Completo):", lastProps);
         
         showProperties(props, item.id);
     };
 
-    // Atalhos do teclado
+    // Atalhos do teclado (Limpar seleção ao apertar ESC)
     window.onkeydown = (event) => {
         if (event.code === 'Escape') {
             viewer.IFC.selector.unpickIfcItems();
@@ -261,14 +236,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Upload de arquivo local (mantido como fallback)
+    // Lógica de Upload de arquivo local (mantida como fallback)
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
             const file = changed.target.files[0];
             if (file) {
                 const ifcURL = URL.createObjectURL(file);
-                await loadIfc(ifcURL);
+                // Para carregar um arquivo local, usamos a função de múltiplos com um só item
+                await loadMultipleIfcs([ifcURL]); 
                 document.getElementById('properties-panel').style.display = 'none';
                 lastProps = null;
             }
