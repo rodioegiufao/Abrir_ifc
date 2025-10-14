@@ -247,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO showProperties (MANTIDA)
+    // 🔹 FUNÇÃO showProperties (VERSÃO DEBUG - MOSTRA TUDO)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -263,6 +263,10 @@ document.addEventListener('DOMContentLoaded', () => {
         title.textContent = elementName;
         
         let htmlContent = '';
+
+        // 🔥 DEBUG: MOSTRA A ESTRUTURA COMPLETA NO CONSOLE
+        console.log('🔍 ESTRUTURA COMPLETA DO ELEMENTO:', props);
+        console.log('📋 PSETS DISPONÍVEIS:', props.psets);
 
         htmlContent += `
             <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
@@ -284,6 +288,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const psetName = pset.Name?.value || `Pset ${index + 1}`;
                 const psetDescription = pset.Description?.value || '';
                 
+                // 🔥 DEBUG: MOSTRA ESTRUTURA DE CADA PSET
+                console.log(`🔍 PSET ${index}:`, psetName, pset);
+                
                 htmlContent += `
                     <div style="background: white; border: 1px solid #ddd; border-radius: 5px; padding: 12px; margin-bottom: 15px;">
                         <h5 style="margin: 0 0 8px 0; color: #495057; font-size: 1.1em;">
@@ -295,16 +302,69 @@ document.addEventListener('DOMContentLoaded', () => {
                 let propertiesFound = false;
                 let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
 
+                // 🔥 MÉTODO 1: HasProperties (estrutura comum)
                 if (pset.HasProperties && pset.HasProperties.length > 0) {
-                    pset.HasProperties.forEach(propHandle => {
+                    console.log(`📋 ${psetName} - HasProperties:`, pset.HasProperties);
+                    
+                    pset.HasProperties.forEach((propHandle, propIndex) => {
                         const prop = props[propHandle.value];
+                        console.log(`   Propriedade ${propIndex}:`, prop);
                         
-                        if (prop && prop.Name && prop.NominalValue) {
+                        if (prop && prop.Name) {
                             propertiesFound = true;
                             const propName = prop.Name.value;
-                            let propValue = prop.NominalValue.value;
+                            let propValue = 'N/A';
+                            
+                            // 🔥 TENTA DIFERENTES FORMAS DE OBTER O VALOR
+                            if (prop.NominalValue) {
+                                propValue = prop.NominalValue.value;
+                            } else if (prop.value !== undefined) {
+                                propValue = prop.value;
+                            } else if (prop.Value) {
+                                propValue = prop.Value.value;
+                            }
                             
                             propertiesHTML += formatProperty(propName, propValue);
+                        }
+                    });
+                }
+                
+                // 🔥 MÉTODO 2: Propriedades diretas no objeto pset
+                if (!propertiesFound) {
+                    console.log(`🔍 ${psetName} - Explorando objeto diretamente:`, pset);
+                    
+                    for (const [key, value] of Object.entries(pset)) {
+                        // Ignora propriedades padrão do IFC
+                        if (['Name', 'Description', 'HasProperties', 'expressID', 'type', 'GlobalId', 'OwnerHistory'].includes(key)) {
+                            continue;
+                        }
+                        
+                        if (value !== null && value !== undefined) {
+                            propertiesFound = true;
+                            console.log(`   Propriedade direta ${key}:`, value);
+                            
+                            let propValue = value;
+                            if (typeof value === 'object' && value.value !== undefined) {
+                                propValue = value.value;
+                            }
+                            
+                            propertiesHTML += formatProperty(key, propValue);
+                        }
+                    }
+                }
+                
+                // 🔥 MÉTODO 3: Verifica se há um array de propriedades
+                if (!propertiesFound && Array.isArray(pset)) {
+                    console.log(`🔍 ${psetName} - É um array:`, pset);
+                    
+                    pset.forEach((item, itemIndex) => {
+                        if (item && typeof item === 'object') {
+                            for (const [key, value] of Object.entries(item)) {
+                                if (value !== null && value !== undefined && !['expressID', 'type'].includes(key)) {
+                                    propertiesFound = true;
+                                    propertiesHTML += formatProperty(`${key}[${itemIndex}]`, value);
+                                }
+                            }
                         }
                     });
                 }
@@ -313,18 +373,84 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (propertiesFound) {
                     htmlContent += propertiesHTML;
+                    console.log(`✅ ${psetName}: ${propertiesFound} propriedades encontradas`);
                 } else {
-                    htmlContent += '<p style="color: #6c757d; margin: 5px 0;">Nenhuma propriedade encontrada neste Pset</p>';
+                    // 🔥 MOSTRA INFORMAÇÕES DE DEBUG NO HTML
+                    htmlContent += `
+                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 10px; margin: 5px 0;">
+                            <p style="margin: 0 0 5px 0; color: #856404; font-size: 12px; font-weight: bold;">
+                                ⚠️ Nenhuma propriedade encontrada com os métodos atuais
+                            </p>
+                            <p style="margin: 0; color: #856404; font-size: 11px;">
+                                Estrutura do Pset disponível no console
+                            </p>
+                        </div>
+                    `;
+                    console.log(`❌ ${psetName}: Nenhuma propriedade encontrada`);
                 }
                 
                 htmlContent += `</div>`;
             });
+        } else {
+            htmlContent += `
+                <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; text-align: center;">
+                    <h5 style="margin: 0; color: #856404;">⚠️ Nenhum Pset Encontrado</h5>
+                    <p style="margin: 5px 0 0 0; color: #856404;">Este elemento não possui conjuntos de propriedades (Psets) definidos.</p>
+                </div>
+            `;
         }
+
+        // 🔥 SEÇÃO DE DEBUG (opcional - remove depois)
+        htmlContent += `
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #dee2e6;">
+                <h5 style="color: #6c757d; margin-bottom: 8px;">🔍 Debug Info</h5>
+                <p style="color: #6c757d; font-size: 11px; margin: 0;">
+                    ExpressID: ${expressID} | Tipo: ${elementType}<br>
+                    Verifique o console para estrutura completa dos dados
+                </p>
+            </div>
+        `;
 
         details.innerHTML = htmlContent;
         panel.style.display = 'block';
         
         console.log(`📋 Elemento selecionado: ${elementName} (${elementType})`);
+        console.log(`📊 Total de Psets: ${props.psets ? props.psets.length : 0}`);
+    }
+
+    // 🔥 FUNÇÃO AUXILIAR PARA FORMATAR PROPRIEDADES (ATUALIZADA)
+    function formatProperty(propName, propValue) {
+        // FORMATAR VALORES ESPECIAIS
+        if (typeof propValue === 'boolean') {
+            propValue = propValue ? '✅ Sim' : '❌ Não';
+        } else if (propValue === null || propValue === undefined) {
+            propValue = '<em style="color: #6c757d;">N/A</em>';
+        } else if (typeof propValue === 'string' && propValue.trim() === '') {
+            propValue = '<em style="color: #6c757d;">(vazio)</em>';
+        } else if (typeof propValue === 'object') {
+            // Se for objeto, tenta mostrar de forma legível
+            try {
+                propValue = JSON.stringify(propValue, null, 2)
+                    .replace(/\n/g, '<br>')
+                    .replace(/ /g, '&nbsp;')
+                    .substring(0, 200) + '...';
+            } catch (e) {
+                propValue = '[Objeto Complexo]';
+            }
+        }
+        
+        // DESTACAR PROPRIEDADES IMPORTANTES
+        const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código', 'Quantidade', 'Preço'].includes(propName);
+        const propStyle = isImportant ? 'font-weight: bold; color: #e83e8c;' : '';
+        
+        return `
+            <li style="margin-bottom: 6px; padding: 3px 0; border-bottom: 1px dotted #f0f0f0;">
+                <span style="${propStyle}">${propName}:</span> 
+                <span style="float: right; text-align: right; max-width: 60%; word-break: break-word; font-family: monospace; font-size: 11px;">
+                    ${propValue}
+                </span>
+            </li>
+        `;
     }
 
     function formatProperty(propName, propValue) {
