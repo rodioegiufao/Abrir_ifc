@@ -3,26 +3,33 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
 let currentModelID = -1;
-let lastProps = null; // Variável global para debug
+let lastProps = null;
 
-// 🚨 1. LISTA DE ARQUIVOS IFC PARA CARREGAR
-// VOCÊ DEVE PREENCHER ESTA LISTA COM AS URLS DE DOWNLOAD DIRETO dos seus arquivos.
+// 🚨 LISTA DE ARQUIVOS IFC - MULTIPLAS TENTATIVAS
 const IFC_MODELS_TO_LOAD = [
-    // Exemplo de como carregar um arquivo local (dentro da pasta /models)
-    //'models/01.ifc', 
+    // Tentativa 1: Link direto com confirmação
+    'https://drive.google.com/uc?export=download&id=1jXglRbnyhLMYz23iJdXl8Rbsg8HiCJmW&confirm=t',
     
-    // Se você tiver mais modelos, adicione-os aqui.
-    // Exemplo de como seria um link do Google Drive (o link deve ser de download direto!)
-    'https://drive.google.com/uc?export=download&id=1jXglRbnyhLMYz23iJdXl8Rbsg8HiCJmW',
-    // 'https://drive.google.com/uc?export=download&id=SEU_ID_DO_IFC_DA_INSTALACAO_1',
+    // Tentativa 2: Arquivo local como fallback
+    'models/01.ifc',
 ];
 
+// 🚨 FUNÇÃO PARA VERIFICAR DISPONIBILIDADE DO ARQUIVO
+async function checkFileAvailability(url) {
+    try {
+        const response = await fetch(url, { method: 'HEAD' });
+        console.log(`🔍 Status do arquivo ${url}: ${response.status}`);
+        return response.ok;
+    } catch (error) {
+        console.log(`❌ Arquivo não acessível: ${url}`);
+        return false;
+    }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
-    // --- Cria o viewer ---
     function CreateViewer(container) {
         const newViewer = new IfcViewerAPI({
             container,
@@ -35,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO: CARREGAR MÚLTIPLOS IFCs (CORRIGIDA PARA ERRO)
+    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (COM FALLBACK)
     // =======================================================
     async function loadMultipleIfcs(urls) {
         if (viewer) await viewer.dispose();
@@ -45,35 +52,58 @@ document.addEventListener('DOMContentLoaded', () => {
         currentModelID = -1;
         console.log(`Iniciando carregamento de ${urls.length} modelos...`);
 
+        let loadedAnyModel = false;
+
         for (const url of urls) {
             try {
-                console.log(`Carregando: ${url}`);
+                console.log(`🔍 Verificando: ${url}`);
+                
+                // Para arquivos locais, não faz verificação HEAD
+                if (url.startsWith('http')) {
+                    const isAvailable = await checkFileAvailability(url);
+                    if (!isAvailable) {
+                        console.log(`⏭️  Pulando arquivo não disponível: ${url}`);
+                        continue;
+                    }
+                }
+
+                console.log(`📦 Carregando: ${url}`);
                 const model = await viewer.IFC.loadIfcUrl(url);
                 
                 if (currentModelID === -1) {
                     currentModelID = model.modelID;
                 }
                 
-                viewer.shadowDropper.renderShadow(model.modelID); 
+                viewer.shadowDropper.renderShadow(model.modelID);
+                loadedAnyModel = true;
+                console.log(`✅ Sucesso ao carregar: ${url}`);
+
+                // Se carregou um, para aqui para não tentar os outros
+                break;
 
             } catch (e) {
-                console.error(`❌ Falha ao carregar o arquivo IFC em: ${url}`, e);
+                console.error(`❌ Falha ao carregar: ${url}`, e.message);
+                // Continua para a próxima URL
             }
         }
+
+        if (!loadedAnyModel) {
+            console.error("🚨 Nenhum modelo IFC pôde ser carregado!");
+            console.log("💡 Soluções:");
+            console.log("   1. Verifique se o arquivo está compartilhado publicamente no Google Drive");
+            console.log("   2. Use um servidor local para servir o arquivo IFC");
+            console.log("   3. Coloque o arquivo IFC na pasta 'models' do seu projeto");
+            return;
+        }
         
-        // 🚨 CORREÇÃO DO ERRO 'updateWorldMatrix': 
-        // 1. Obtemos a cena completa.
+        // Ajuste da câmera
         const scene = viewer.context.getScene();
-        
-        // 2. Adicionamos um pequeno delay para garantir que o Three.js finalize o processamento.
-        await new Promise(resolve => setTimeout(resolve, 100)); 
+        await new Promise(resolve => setTimeout(resolve, 100));
+        viewer.context.ifcCamera.cameraControls.fitToBox(scene, true, 0.5, true);
 
-        // 3. Enquadramos a câmera usando o objeto da cena.
-        viewer.context.ifcCamera.cameraControls.fitToBox(scene, true, 0.5, true); 
-
-        console.log("✅ Todos os modelos IFC carregados com sucesso.");
+        console.log("✅ Modelos IFC carregados com sucesso.");
     }
-    
+
     // =======================================================
     // 🔹 FUNÇÃO showProperties (TODAS AS MENSAGENS NO CONSOLE + VISUAL FORMATADO)
     // =======================================================
@@ -209,20 +239,28 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("🟨 HTML Gerado:", finalDetailsHTML);
     }
 
-    // 🚨 2. CHAMADA PRINCIPAL
-    loadMultipleIfcs(IFC_MODELS_TO_LOAD);
+    // 🚨 CHAMADA PRINCIPAL COM TRY-CATCH
+    async function initializeViewer() {
+        try {
+            await loadMultipleIfcs(IFC_MODELS_TO_LOAD);
+        } catch (error) {
+            console.error("🚨 Erro crítico ao inicializar o visualizador:", error);
+        }
+    }
+
+    initializeViewer();
 
     // =======================================================
     // 🔹 EVENTO DE DUPLO CLIQUE 
     // =======================================================
     
-    window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
+    window.onmousemove = () => viewer?.IFC?.selector?.prePickIfcItem();
 
     window.ondblclick = async (event) => {
+        if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
+        
         event.preventDefault();
         event.stopPropagation();
-        
-        if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
         
         const item = await viewer.IFC.selector.pickIfcItem(true);
 
@@ -246,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Atalhos do teclado (Limpar seleção ao apertar ESC)
     window.onkeydown = (event) => {
-        if (event.code === 'Escape') {
+        if (event.code === 'Escape' && viewer?.IFC?.selector) {
             viewer.IFC.selector.unpickIfcItems();
             viewer.IFC.selector.unHighlightIfcItems();
             document.getElementById('properties-panel').style.display = 'none';
