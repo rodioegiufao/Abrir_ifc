@@ -35,16 +35,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 NOVA FUNÇÃO: CARREGAR MÚLTIPLOS IFCs
+    // 🔹 FUNÇÃO: CARREGAR MÚLTIPLOS IFCs (CORRIGIDA PARA ERRO)
     // =======================================================
     async function loadMultipleIfcs(urls) {
         if (viewer) await viewer.dispose();
         viewer = CreateViewer(container);
         await viewer.IFC.setWasmPath("/wasm/"); 
         
-        // Zera o ID principal. O primeiro modelo carregado definirá o currentModelID.
         currentModelID = -1;
-
         console.log(`Iniciando carregamento de ${urls.length} modelos...`);
 
         for (const url of urls) {
@@ -52,27 +50,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`Carregando: ${url}`);
                 const model = await viewer.IFC.loadIfcUrl(url);
                 
-                // O modelo principal (para seleção e corte) será o primeiro carregado
                 if (currentModelID === -1) {
                     currentModelID = model.modelID;
                 }
                 
-                // Opção para sombras (se houver problemas de performance, comente esta linha)
                 viewer.shadowDropper.renderShadow(model.modelID); 
 
             } catch (e) {
-                console.error(`Falha ao carregar o arquivo IFC em: ${url}`, e);
+                console.error(`❌ Falha ao carregar o arquivo IFC em: ${url}`, e);
             }
         }
         
-        // Ajusta a câmera para enquadrar todos os modelos
-        viewer.context.ifcCamera.cameraControls.fitToBox(true, 0.5, true); 
+        // 🚨 CORREÇÃO DO ERRO 'updateWorldMatrix': 
+        // 1. Obtemos a cena completa.
+        const scene = viewer.context.getScene();
+        
+        // 2. Adicionamos um pequeno delay para garantir que o Three.js finalize o processamento.
+        await new Promise(resolve => setTimeout(resolve, 100)); 
+
+        // 3. Enquadramos a câmera usando o objeto da cena.
+        viewer.context.ifcCamera.cameraControls.fitToBox(scene, true, 0.5, true); 
 
         console.log("✅ Todos os modelos IFC carregados com sucesso.");
     }
     
     // =======================================================
-    // 🔹 FUNÇÃO showProperties (Versão Robusta: TUDO VISÍVEL)
+    // 🔹 FUNÇÃO showProperties (TUDO VISÍVEL E FORMATADO)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -104,8 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (props.psets && props.psets.length > 0) {
             props.psets.forEach((pset) => {
                 const psetName = pset.Name?.value || 'Pset Desconhecido';
-                // 🚨 Uso o 'includes' flexível para evitar erros de prefixo
-                const isAssociadosPset = psetName && psetName.includes("Itens_Associados");
+                const isAssociadosPset = psetName && psetName.includes("Itens_Associados"); // Busca flexível
                 
                 let currentPsetPropertiesHTML = '';
 
@@ -190,11 +192,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 🚨 2. CHAMADA PRINCIPAL
-    // Substitui a chamada loadIfc antiga pela nova
     loadMultipleIfcs(IFC_MODELS_TO_LOAD);
 
     // =======================================================
-    // 🔹 EVENTO DE DUPLO CLIQUE (INALTERADO)
+    // 🔹 EVENTO DE DUPLO CLIQUE 
     // =======================================================
     
     window.onmousemove = () => viewer.IFC.selector.prePickIfcItem();
@@ -205,7 +206,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
         
-        // Note: Com múltiplos modelos, o item retornado terá o modelID correto
         const item = await viewer.IFC.selector.pickIfcItem(true);
 
         if (!item || item.modelID === undefined || item.id === undefined) {
