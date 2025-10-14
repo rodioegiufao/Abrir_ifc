@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // =======================================================
-    // 🔹 FUNÇÃO showProperties (TUDO VISÍVEL E FORMATADO)
+    // 🔹 FUNÇÃO showProperties (TODAS AS MENSAGENS NO CONSOLE + VISUAL FORMATADO)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -87,11 +87,23 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 1. EXTRAÇÃO DE DADOS BÁSICOS
+        // 🟢 ADICIONANDO AS MENSAGENS DE LOG NO CONSOLE
         const elementTypeName = props.type[0]?.Name?.value || props.type[0]?.constructor.name || 'Elemento Desconhecido';
-        const elementType = props.constructor.name;
         const elementName = props.Name?.value || elementTypeName;
+        
+        console.log(`📋 Elemento selecionado: ${elementName} (${props.constructor.name})`);
+        console.log(`📊 Total de Psets: ${props.psets ? props.psets.length : 0}`);
 
+        // Log detalhado de cada Pset
+        if (props.psets && props.psets.length > 0) {
+            props.psets.forEach((pset) => {
+                const psetName = pset.Name?.value || 'Pset Desconhecido';
+                const propertyCount = pset.HasProperties ? pset.HasProperties.length : 0;
+                console.log(`   - ${psetName}: ${propertyCount} propriedades`);
+            });
+        }
+
+        // 1. EXTRAÇÃO DE DADOS BÁSICOS
         title.textContent = elementName;
         
         let identificacaoPrincipalHTML = '<h4>Identificação Principal</h4><ul>';
@@ -166,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Finaliza o HTML de Identificação
         identificacaoPrincipalHTML += `
-            <p class="type-info"><strong>Tipo IFC:</strong> ${elementType}</p>
+            <p class="type-info"><strong>Tipo IFC:</strong> ${props.constructor.name}</p>
             <p><strong>ID IFC:</strong> ${expressID}</p>
             <p><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
         </ul><hr>`;
