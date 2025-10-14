@@ -12,7 +12,7 @@ const IFC_MODELS_TO_LOAD = [
 ];
 
 // 🔥 CONTROLE DE VISIBILIDADE
-let loadedModels = new Map(); // Map<modelID, { visible: boolean, name: string }>
+let loadedModels = new Map(); // Map<modelID, { visible: boolean, name: string, url: string }>
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs
+    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (COM CORREÇÃO)
     // =======================================================
     async function loadMultipleIfcs(urls) {
         if (viewer) await viewer.dispose();
@@ -50,9 +50,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const model = await viewer.IFC.loadIfcUrl(url);
                 
-                if (currentModelID === -1) {
-                    currentModelID = model.modelID;
-                }
+                // 💡 CORREÇÃO CRÍTICA AQUI: FORÇA O CARREGAMENTO DE TODAS AS PROPRIEDADES 
+                // Isso garante que os Handles (IDs internos) dentro dos Psets sejam resolvidos
+                // e os valores das propriedades possam ser recuperados.
+                const manager = viewer.IFC.loader.ifcManager;
+                await manager.loadAllProperties(model.modelID); 
+                console.log(`✅ Propriedades carregadas e resolvidas para o modelo: ${url}`);
                 
                 viewer.shadowDropper.renderShadow(model.modelID);
                 loadedCount++;
@@ -247,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO showProperties (VERSÃO CORRIGIDA)
+    // 🔹 FUNÇÃO showProperties (VERSÃO OTIMIZADA)
     // =======================================================
     function showProperties(props, expressID) {
         const panel = document.getElementById('properties-panel');
@@ -256,9 +259,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!panel || !details) return;
 
-        const elementTypeName = props.type[0]?.Name?.value || props.type[0]?.constructor.name || 'Elemento Desconhecido';
         const elementType = props.constructor.name;
-        const elementName = props.Name?.value || elementTypeName;
+        const elementName = props.Name?.value || elementType;
 
         title.textContent = elementName;
         
@@ -275,9 +277,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p style="margin: 4px 0;"><strong>Nome:</strong> ${elementName}</p>
                 <p style="margin: 4px 0;"><strong>ID IFC:</strong> ${expressID}</p>
                 <p style="margin: 4px 0;"><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
-                ${props.Description?.value ? `<p style="margin: 4px 0;"><strong>Descrição:</strong> ${props.Description.value}</p>` : ''}
-                ${props.ObjectType?.value ? `<p style="margin: 4px 0;"><strong>Tipo de Objeto:</strong> ${props.ObjectType.value}</p>` : ''}
-                ${props.Tag?.value ? `<p style="margin: 4px 0;"><strong>Tag:</strong> ${props.Tag.value}</p>` : ''}
             </div>
         `;
 
@@ -286,101 +285,45 @@ document.addEventListener('DOMContentLoaded', () => {
             
             props.psets.forEach((pset, index) => {
                 const psetName = pset.Name?.value || `Pset ${index + 1}`;
-                const psetDescription = pset.Description?.value || '';
                 
                 console.log(`🔍 PSET ${index}: ${psetName}`, pset);
                 
                 htmlContent += `
                     <div style="background: white; border: 1px solid #ddd; border-radius: 5px; padding: 12px; margin-bottom: 15px;">
-                        <h5 style="margin: 0 0 8px 0; color: #495057; font-size: 1.1em;">
-                            ${psetName}
-                            ${psetDescription ? `<br><small style="color: #6c757d; font-weight: normal;">${psetDescription}</small>` : ''}
-                        </h5>
+                        <h5 style="margin: 0 0 8px 0; color: #495057; font-size: 1.1em;">${psetName}</h5>
                 `;
 
                 let propertiesFound = false;
                 let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
 
-                // 🔥 MÉTODO CORRIGIDO: Busca propriedades no objeto global
+                // 🔥 MÉTODO PRINCIPAL: Itera sobre os Handles e busca no objeto de propriedades (agora populado)
                 if (pset.HasProperties && pset.HasProperties.length > 0) {
-                    console.log(`📋 ${psetName} - HasProperties:`, pset.HasProperties);
+                    console.log(`📋 ${psetName} - HasProperties: (${pset.HasProperties.length}) [Handles]`);
                     
                     pset.HasProperties.forEach((propHandle, propIndex) => {
-                        console.log(`   🔍 Buscando propriedade ${propIndex}:`, propHandle);
                         
-                        // 🔥 TENTA DIFERENTES FORMAS DE ACESSAR AS PROPRIEDADES
-                        let prop = null;
-                        
-                        // Método 1: Acesso direto pelo valor do Handle
-                        if (propHandle.value !== undefined) {
-                            prop = props[propHandle.value];
-                            console.log(`   Método 1 (props[${propHandle.value}]):`, prop);
-                        }
-                        
-                        // Método 2: Procura em todo o objeto props
-                        if (!prop) {
-                            for (const key in props) {
-                                const item = props[key];
-                                if (item && item.expressID === propHandle.value) {
-                                    prop = item;
-                                    console.log(`   Método 2 (expressID ${propHandle.value}):`, prop);
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        // Método 3: Procura por propriedades com o mesmo ID
-                        if (!prop && propHandle.expressID) {
-                            prop = props[propHandle.expressID];
-                            console.log(`   Método 3 (props[${propHandle.expressID}]):`, prop);
-                        }
-                        
+                        // O valor do handle é o EXPRESS ID da entidade de propriedade (ex: IfcPropertySingleValue)
+                        const propExpressID = propHandle.value;
+                        const prop = props[propExpressID]; // Acesso direto no cache populado por loadAllProperties()
+
                         if (prop && prop.Name) {
                             propertiesFound = true;
-                            const propName = prop.Name.value || prop.Name || 'Sem nome';
+                            const propName = prop.Name.value || 'Sem nome';
                             let propValue = 'N/A';
                             
-                            // Tenta diferentes formas de obter o valor
+                            // Recupera o valor (NominalValue é o padrão para IfcPropertySingleValue)
                             if (prop.NominalValue && prop.NominalValue.value !== undefined) {
                                 propValue = prop.NominalValue.value;
-                            } else if (prop.NominalValue) {
-                                propValue = prop.NominalValue;
-                            } else if (prop.value !== undefined) {
-                                propValue = prop.value;
-                            } else if (prop.Value) {
-                                propValue = prop.Value.value || prop.Value;
+                            } else if (prop.Value && prop.Value.value !== undefined) { // Para outros tipos de propriedade
+                                propValue = prop.Value.value;
                             }
                             
-                            console.log(`   ✅ Propriedade encontrada: ${propName} = ${propValue}`);
+                            console.log(`   ✅ Propriedade encontrada (ID: ${propExpressID}): ${propName} = ${propValue}`);
                             propertiesHTML += formatProperty(propName, propValue);
                         } else {
-                            console.log(`   ❌ Propriedade não encontrada para handle:`, propHandle);
+                            console.log(`   ❌ Propriedade não encontrada para handle: Handle {value: ${propExpressID}, type: 5}`);
                         }
                     });
-                }
-                
-                // 🔥 MÉTODO ALTERNATIVO: Explora propriedades diretamente no pset
-                if (!propertiesFound) {
-                    console.log(`🔍 ${psetName} - Explorando objeto pset diretamente:`, pset);
-                    
-                    // Procura por qualquer propriedade que não seja as padrões do IFC
-                    const standardProps = ['Name', 'Description', 'HasProperties', 'expressID', 'type', 'GlobalId', 'OwnerHistory'];
-                    
-                    for (const [key, value] of Object.entries(pset)) {
-                        if (!standardProps.includes(key) && value !== null && value !== undefined) {
-                            propertiesFound = true;
-                            console.log(`   Propriedade direta ${key}:`, value);
-                            
-                            let propValue = value;
-                            if (typeof value === 'object' && value.value !== undefined) {
-                                propValue = value.value;
-                            } else if (typeof value === 'object' && value.Name) {
-                                propValue = value.Name.value || value.Name;
-                            }
-                            
-                            propertiesHTML += formatProperty(key, propValue);
-                        }
-                    }
                 }
 
                 propertiesHTML += '</ul>';
@@ -389,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     htmlContent += propertiesHTML;
                     console.log(`✅ ${psetName}: PROPRIEDADES ENCONTRADAS!`);
                 } else {
-                    // 🔥 MOSTRA INFORMAÇÕES DETALHADAS SOBRE O PSET
+                    // Mensagem de aviso se a correção não funcionar por algum motivo (embora deva funcionar)
                     htmlContent += `
                         <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 10px; margin: 5px 0;">
                             <p style="margin: 0 0 5px 0; color: #856404; font-size: 12px; font-weight: bold;">
@@ -411,7 +354,6 @@ document.addEventListener('DOMContentLoaded', () => {
             htmlContent += `
                 <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; text-align: center;">
                     <h5 style="margin: 0; color: #856404;">⚠️ Nenhum Pset Encontrado</h5>
-                    <p style="margin: 5px 0 0 0; color: #856404;">Este elemento não possui conjuntos de propriedades (Psets) definidos.</p>
                 </div>
             `;
         }
@@ -425,81 +367,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 🔥 FUNÇÃO AUXILIAR PARA FORMATAR PROPRIEDADES
     function formatProperty(propName, propValue) {
-        // FORMATAR VALORES ESPECIAIS
         if (typeof propValue === 'boolean') {
             propValue = propValue ? '✅ Sim' : '❌ Não';
         } else if (propValue === null || propValue === undefined) {
             propValue = '<em style="color: #6c757d;">N/A</em>';
         } else if (typeof propValue === 'string' && propValue.trim() === '') {
             propValue = '<em style="color: #6c757d;">(vazio)</em>';
-        } else if (typeof propValue === 'object') {
-            // Se for objeto, tenta mostrar de forma legível
-            try {
-                propValue = JSON.stringify(propValue, null, 2)
-                    .replace(/\n/g, '<br>')
-                    .replace(/ /g, '&nbsp;')
-                    .substring(0, 200) + '...';
-            } catch (e) {
-                propValue = '[Objeto Complexo]';
-            }
-        }
-        
-        // DESTACAR PROPRIEDADES IMPORTANTES
-        const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código', 'Quantidade', 'Preço'].includes(propName);
-        const propStyle = isImportant ? 'font-weight: bold; color: #e83e8c;' : '';
-        
-        return `
-            <li style="margin-bottom: 6px; padding: 3px 0; border-bottom: 1px dotted #f0f0f0;">
-                <span style="${propStyle}">${propName}:</span> 
-                <span style="float: right; text-align: right; max-width: 60%; word-break: break-word; font-family: monospace; font-size: 11px;">
-                    ${propValue}
-                </span>
-            </li>
-        `;
-    }
-
-    // 🔥 FUNÇÃO AUXILIAR PARA FORMATAR PROPRIEDADES (ATUALIZADA)
-    function formatProperty(propName, propValue) {
-        // FORMATAR VALORES ESPECIAIS
-        if (typeof propValue === 'boolean') {
-            propValue = propValue ? '✅ Sim' : '❌ Não';
-        } else if (propValue === null || propValue === undefined) {
-            propValue = '<em style="color: #6c757d;">N/A</em>';
-        } else if (typeof propValue === 'string' && propValue.trim() === '') {
-            propValue = '<em style="color: #6c757d;">(vazio)</em>';
-        } else if (typeof propValue === 'object') {
-            // Se for objeto, tenta mostrar de forma legível
-            try {
-                propValue = JSON.stringify(propValue, null, 2)
-                    .replace(/\n/g, '<br>')
-                    .replace(/ /g, '&nbsp;')
-                    .substring(0, 200) + '...';
-            } catch (e) {
-                propValue = '[Objeto Complexo]';
-            }
-        }
-        
-        // DESTACAR PROPRIEDADES IMPORTANTES
-        const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código', 'Quantidade', 'Preço'].includes(propName);
-        const propStyle = isImportant ? 'font-weight: bold; color: #e83e8c;' : '';
-        
-        return `
-            <li style="margin-bottom: 6px; padding: 3px 0; border-bottom: 1px dotted #f0f0f0;">
-                <span style="${propStyle}">${propName}:</span> 
-                <span style="float: right; text-align: right; max-width: 60%; word-break: break-word; font-family: monospace; font-size: 11px;">
-                    ${propValue}
-                </span>
-            </li>
-        `;
-    }
-
-    function formatProperty(propName, propValue) {
-        if (typeof propValue === 'boolean') {
-            propValue = propValue ? '✅ Sim' : '❌ Não';
-        } else if (propValue === null || propValue === undefined) {
-            propValue = '<em style="color: #6c757d;">N/A</em>';
-        } else if (typeof propValue === 'string' && propValue.trim() === '') {
-            propValue = '<em style="color: #6c757d;">(vazio)</em>';
+        } else if (typeof propValue === 'object' && propValue.constructor.name !== 'Object') {
+             // Tenta extrair valor de objetos complexos (ex: IfcMeasureValue)
+             propValue = propValue.value !== undefined ? propValue.value : JSON.stringify(propValue);
         }
         
         const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código', 'Quantidade', 'Preço'].includes(propName);
@@ -528,15 +404,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // 🔹 EVENTOS DE INTERAÇÃO
     // =======================================================
     
+    // Pré-seleção ao mover o mouse
     window.onmousemove = () => viewer?.IFC?.selector?.prePickIfcItem();
 
+    // Duplo clique para seleção e exibição de propriedades
     window.ondblclick = async (event) => {
         if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
         
         event.preventDefault();
         event.stopPropagation();
         
-        const item = await viewer.IFC.selector.pickIfcItem(true);
+        // O 'true' indica pesquisa profunda (recursive), que funciona agora que as propriedades foram carregadas.
+        const item = await viewer.IFC.selector.pickIfcItem(true); 
 
         if (!item || item.modelID === undefined || item.id === undefined) {
             document.getElementById('properties-panel').style.display = 'none';
@@ -548,6 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.IFC.selector.unHighlightIfcItems();
         viewer.IFC.selector.highlightIfcItem(item, false);
         
+        // Pega as propriedades usando a pesquisa profunda (true)
         const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
         
         lastProps = props; 
@@ -556,6 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showProperties(props, item.id);
     };
 
+    // Tecla ESC para limpar seleção
     window.onkeydown = (event) => {
         if (event.code === 'Escape' && viewer?.IFC?.selector) {
             viewer.IFC.selector.unpickIfcItems();
