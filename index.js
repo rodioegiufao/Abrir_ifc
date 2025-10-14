@@ -9,11 +9,11 @@ let lastProps = null; // Variável global para debug
 // VOCÊ DEVE PREENCHER ESTA LISTA COM AS URLS DE DOWNLOAD DIRETO dos seus arquivos.
 const IFC_MODELS_TO_LOAD = [
     // Exemplo de como carregar um arquivo local (dentro da pasta /models)
-    'models/01.ifc', 
+    //'models/01.ifc', 
     
     // Se você tiver mais modelos, adicione-os aqui.
     // Exemplo de como seria um link do Google Drive (o link deve ser de download direto!)
-    // 'https://drive.google.com/uc?export=download&id=SEU_ID_DO_IFC_DA_ESTRUTURA',
+    'https://drive.google.com/uc?export=download&id=1jXglRbnyhLMYz23iJdXl8Rbsg8HiCJmW',
     // 'https://drive.google.com/uc?export=download&id=SEU_ID_DO_IFC_DA_INSTALACAO_1',
 ];
 
@@ -176,12 +176,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 3. MONTAGEM DO HTML FINAL
         
-        // Finaliza o HTML de Identificação
+        // Finaliza o HTML de Identificação (CORREÇÃO: fechar a ul ANTES dos parágrafos)
+        identificacaoPrincipalHTML += `</ul>`; // FECHA A UL PRIMEIRO
+        
+        // Agora adiciona os parágrafos
         identificacaoPrincipalHTML += `
             <p class="type-info"><strong>Tipo IFC:</strong> ${props.constructor.name}</p>
             <p><strong>ID IFC:</strong> ${expressID}</p>
             <p><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
-        </ul><hr>`;
+            <hr>`;
 
         let finalDetailsHTML = identificacaoPrincipalHTML;
         
@@ -201,6 +204,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // 4. EXIBE O PAINEL
         details.innerHTML = finalDetailsHTML;
         panel.style.display = 'block';
+        
+        // DEBUG: Verifique o HTML gerado
+        console.log("🟨 HTML Gerado:", finalDetailsHTML);
     }
 
     // 🚨 2. CHAMADA PRINCIPAL
