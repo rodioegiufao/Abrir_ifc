@@ -5,6 +5,9 @@ let viewer;
 let currentModelID = -1;
 let lastProps = null; // Variável global para pesquisa no console
 
+// 🔥 LINK FIXO DO GOOGLE DRIVE
+const GOOGLE_DRIVE_IFC_LINK = 'https://drive.google.com/uc?export=download&id=1xL_PtfapP_pgZ9HczojDj8lTPIv_3NLS';
+
 document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
@@ -32,6 +35,21 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.shadowDropper.renderShadow(currentModelID);
         console.log("✅ Modelo IFC carregado com ID:", currentModelID);
         return model;
+    }
+
+    // 🔥 FUNÇÃO PARA CARREGAR DO GOOGLE DRIVE
+    async function loadIfcFromGoogleDrive() {
+        try {
+            console.log('🔄 Carregando IFC do Google Drive...');
+            console.log('🔗 Link:', GOOGLE_DRIVE_IFC_LINK);
+            
+            await loadIfc(GOOGLE_DRIVE_IFC_LINK);
+            
+            console.log('✅ IFC carregado do Google Drive com sucesso!');
+        } catch (error) {
+            console.error('❌ Erro ao carregar do Google Drive:', error);
+            alert('Erro ao carregar arquivo do Google Drive. Verifique o console para mais detalhes.');
+        }
     }
 
     // =======================================================
@@ -196,7 +214,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Inicialização ---
     viewer = CreateViewer(container);
-    loadIfc('models/01.ifc');
+    
+    // 🔥 CARREGA DIRETAMENTE DO GOOGLE DRIVE
+    loadIfcFromGoogleDrive();
 
     // =======================================================
     // 🔹 EVENTO DE DUPLO CLIQUE
@@ -241,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Upload de arquivo 
+    // Upload de arquivo local (mantido como fallback)
     const input = document.getElementById("file-input");
     if (input) {
         input.addEventListener("change", async (changed) => {
