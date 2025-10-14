@@ -30,7 +30,7 @@
             position: fixed;
             top: 10px;
             right: 10px;
-            width: 450px; /* Ligeiramente maior para mais conteúdo */
+            width: 450px;
             max-height: 95vh;
             overflow-y: auto;
             background: rgba(255, 255, 255, 0.98);
@@ -86,30 +86,96 @@
             color: #888;
         }
 
-        /* Scrollbar personalizada */
-        #properties-panel::-webkit-scrollbar {
-            width: 8px;
+        /* 🔥 CONTROLES DE VISIBILIDADE */
+        #visibility-controls {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 2000;
+            min-width: 200px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-family: Arial, sans-serif;
         }
 
-        #properties-panel::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 4px;
+        #visibility-controls h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 14px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
         }
 
-        #properties-panel::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 4px;
+        .model-control {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
-        #properties-panel::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
+        .model-name {
+            font-size: 12px;
+            color: #666;
+            flex: 1;
+        }
+
+        .visibility-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: background-color 0.2s;
+        }
+
+        .visibility-btn:hover {
+            opacity: 0.9;
+        }
+
+        .visibility-btn.hidden {
+            background: #28a745;
+        }
+
+        .controls-row {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .control-all-btn {
+            flex: 1;
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 6px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: background-color 0.2s;
+        }
+
+        .control-all-btn:hover {
+            background: #5a6268;
+        }
+
+        .control-all-btn.show-all {
+            background: #28a745;
+        }
+
+        .control-all-btn.hide-all {
+            background: #dc3545;
         }
 
         /* Estilo para botão de upload */
         #file-input-container {
             position: fixed;
             top: 10px;
-            left: 10px;
+            left: 220px; /* 🔥 Ajustado para não sobrepor os controles */
             z-index: 2000;
         }
 
@@ -130,12 +196,36 @@
         #file-input {
             display: none;
         }
+
+        /* Scrollbar personalizada */
+        #properties-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #properties-panel::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        #properties-panel::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        #properties-panel::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
     </style>
 </head>
 
 <body>
     
     <div id="viewer-container"></div>
+
+    <!-- 🔥 CONTROLES DE VISIBILIDADE (serão criados dinamicamente pelo JavaScript) -->
+    <div id="visibility-controls" style="display: none;">
+        <!-- Conteúdo será gerado pelo JavaScript -->
+    </div>
 
     <div id="properties-panel">
         <h3 id="element-title">Propriedades do Elemento</h3>

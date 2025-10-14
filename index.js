@@ -5,11 +5,14 @@ let viewer;
 let currentModelID = -1;
 let lastProps = null;
 
-// ✅ LISTA SIMPLES DE ARQUIVOS IFC LOCAIS
+// ✅ LISTA DE ARQUIVOS IFC 
 const IFC_MODELS_TO_LOAD = [
     'models/01.ifc',
     'models/02.ifc',
 ];
+
+// 🔥 CONTROLE DE VISIBILIDADE
+let loadedModels = new Map(); // Map<modelID, { visible: boolean, name: string }>
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -27,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =======================================================
-    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (CORRIGIDA)
+    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs
     // =======================================================
     async function loadMultipleIfcs(urls) {
         if (viewer) await viewer.dispose();
@@ -35,10 +38,11 @@ document.addEventListener('DOMContentLoaded', () => {
         await viewer.IFC.setWasmPath("/wasm/"); 
         
         currentModelID = -1;
+        loadedModels.clear(); // Limpa modelos anteriores
+        
         console.log(`🔄 Iniciando carregamento de ${urls.length} modelos...`);
 
-        let loadedModels = 0;
-        let loadedModelIDs = [];
+        let loadedCount = 0;
 
         for (const url of urls) {
             try {
@@ -51,36 +55,167 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 viewer.shadowDropper.renderShadow(model.modelID);
-                loadedModels++;
-                loadedModelIDs.push(model.modelID);
+                loadedCount++;
                 
-                console.log(`✅ Sucesso: ${url} (ID: ${model.modelID})`);
+                // 🔥 ARMAZENA INFORMAÇÕES DO MODELO
+                const modelName = getModelNameFromUrl(url);
+                loadedModels.set(model.modelID, {
+                    visible: true,
+                    name: modelName,
+                    url: url
+                });
                 
-                // ✅ REMOVI O 'break' - AGORA CARREGA TODOS!
-                // Continua para o próximo arquivo
+                console.log(`✅ Sucesso: ${modelName} (ID: ${model.modelID})`);
 
             } catch (error) {
                 console.error(`❌ Falha ao carregar: ${url}`, error.message);
-                // Continua para a próxima URL mesmo com erro
             }
         }
 
-        if (loadedModels === 0) {
+        if (loadedCount === 0) {
             console.error("🚨 Nenhum modelo IFC pôde ser carregado!");
             showErrorMessage();
             return;
         }
         
-        // Ajuste da câmera para visualizar todos os modelos
+        // Ajuste da câmera
         const scene = viewer.context.getScene();
         await new Promise(resolve => setTimeout(resolve, 100));
         viewer.context.ifcCamera.cameraControls.fitToBox(scene, true, 0.5, true);
 
-        console.log(`🎉 ${loadedModels}/${urls.length} modelos carregados com sucesso!`);
-        console.log(`📊 IDs dos modelos: ${loadedModelIDs.join(', ')}`);
+        // 🔥 CRIA OS BOTÕES DE CONTROLE
+        createVisibilityControls();
+        
+        console.log(`🎉 ${loadedCount}/${urls.length} modelos carregados!`);
     }
 
-    // 🔹 MENSAGEM DE ERRO SIMPLES
+    // 🔥 EXTRAI NOME DO ARQUIVO DA URL
+    function getModelNameFromUrl(url) {
+        const parts = url.split('/');
+        return parts[parts.length - 1]; // Pega o último parte (nome do arquivo)
+    }
+
+    // 🔥 CRIA BOTÕES DE CONTROLE DE VISIBILIDADE
+    function createVisibilityControls() {
+        // Remove controles anteriores se existirem
+        const existingControls = document.getElementById('visibility-controls');
+        if (existingControls) {
+            existingControls.remove();
+        }
+        
+        const controlsDiv = document.createElement('div');
+        controlsDiv.id = 'visibility-controls';
+        controlsDiv.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 2000;
+            min-width: 200px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-family: Arial, sans-serif;
+        `;
+        
+        let controlsHTML = `
+            <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">👁️ Controle de Modelos</h4>
+        `;
+        
+        // Cria um botão para cada modelo carregado
+        loadedModels.forEach((modelInfo, modelID) => {
+            const buttonText = modelInfo.visible ? '👁️ Ocultar' : '🙈 Mostrar';
+            const buttonColor = modelInfo.visible ? '#dc3545' : '#28a745';
+            
+            controlsHTML += `
+                <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 12px; color: #666;">${modelInfo.name}</span>
+                    <button onclick="toggleModelVisibility(${modelID})" 
+                            style="background: ${buttonColor}; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;">
+                        ${buttonText}
+                    </button>
+                </div>
+            `;
+        });
+        
+        // Botão para mostrar/ocultar todos
+        controlsHTML += `
+            <hr style="margin: 10px 0; border: none; border-top: 1px solid #eee;">
+            <div style="display: flex; gap: 5px;">
+                <button onclick="showAllModels()" 
+                        style="flex: 1; background: #28a745; color: white; border: none; padding: 6px; border-radius: 3px; cursor: pointer; font-size: 11px;">
+                    👁️ Todos
+                </button>
+                <button onclick="hideAllModels()" 
+                        style="flex: 1; background: #dc3545; color: white; border: none; padding: 6px; border-radius: 3px; cursor: pointer; font-size: 11px;">
+                    🙈 Nenhum
+                </button>
+            </div>
+        `;
+        
+        controlsDiv.innerHTML = controlsHTML;
+        document.body.appendChild(controlsDiv);
+    }
+
+    // 🔥 ALTERNA VISIBILIDADE DE UM MODELO ESPECÍFICO
+    function toggleModelVisibility(modelID) {
+        const modelInfo = loadedModels.get(modelID);
+        if (!modelInfo) return;
+        
+        modelInfo.visible = !modelInfo.visible;
+        
+        // Encontra e altera a visibilidade do modelo
+        viewer.context.items.ifcModels.forEach(model => {
+            if (model.modelID === modelID) {
+                model.visible = modelInfo.visible;
+            }
+        });
+        
+        // Atualiza os controles
+        createVisibilityControls();
+        
+        console.log(`🔸 ${modelInfo.visible ? 'Mostrando' : 'Ocultando'} ${modelInfo.name}`);
+    }
+
+    // 🔥 MOSTRA TODOS OS MODELOS
+    function showAllModels() {
+        loadedModels.forEach((modelInfo, modelID) => {
+            modelInfo.visible = true;
+            
+            viewer.context.items.ifcModels.forEach(model => {
+                if (model.modelID === modelID) {
+                    model.visible = true;
+                }
+            });
+        });
+        
+        createVisibilityControls();
+        console.log('🔸 Mostrando todos os modelos');
+    }
+
+    // 🔥 OCULTA TODOS OS MODELOS
+    function hideAllModels() {
+        loadedModels.forEach((modelInfo, modelID) => {
+            modelInfo.visible = false;
+            
+            viewer.context.items.ifcModels.forEach(model => {
+                if (model.modelID === modelID) {
+                    model.visible = false;
+                }
+            });
+        });
+        
+        createVisibilityControls();
+        console.log('🔸 Ocultando todos os modelos');
+    }
+
+    // 🔥 EXPORTA FUNÇÕES PARA O ESCOPO GLOBAL
+    window.toggleModelVisibility = toggleModelVisibility;
+    window.showAllModels = showAllModels;
+    window.hideAllModels = hideAllModels;
+
+    // 🔹 MENSAGEM DE ERRO
     function showErrorMessage() {
         const errorDiv = document.createElement('div');
         errorDiv.style.cssText = `
@@ -100,12 +235,8 @@ document.addEventListener('DOMContentLoaded', () => {
         errorDiv.innerHTML = `
             <h3 style="color: #721c24; margin-top: 0;">⚠️ Arquivos IFC Não Encontrados</h3>
             <p style="color: #721c24;">
-                Verifique se os arquivos estão na pasta 'models/':
+                Verifique se os arquivos estão na pasta 'models/'
             </p>
-            <ul style="text-align: left; color: #721c24;">
-                <li>01.ifc</li>
-                <li>02.ifc</li>
-            </ul>
             <button onclick="this.parentElement.remove()" 
                     style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px;">
                 Fechar
@@ -123,12 +254,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const title = document.getElementById('element-title');
         const details = document.getElementById('element-details');
         
-        if (!panel || !details) {
-            console.error("IDs de painel não encontrados. Verifique seu index.html.");
-            return;
-        }
+        if (!panel || !details) return;
 
-        // 1. INFORMAÇÕES BÁSICAS DO ELEMENTO
         const elementTypeName = props.type[0]?.Name?.value || props.type[0]?.constructor.name || 'Elemento Desconhecido';
         const elementType = props.constructor.name;
         const elementName = props.Name?.value || elementTypeName;
@@ -137,7 +264,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let htmlContent = '';
 
-        // 2. CABEÇALHO COM INFORMAÇÕES PRINCIPAIS
         htmlContent += `
             <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
                 <h4 style="margin: 0 0 8px 0; color: #007bff;">Informações Gerais</h4>
@@ -151,7 +277,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        // 3. PROCESSAR TODOS OS PSETS
         if (props.psets && props.psets.length > 0) {
             htmlContent += `<h4 style="color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 5px;">Conjuntos de Propriedades (${props.psets.length} Psets)</h4>`;
             
@@ -167,11 +292,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         </h5>
                 `;
 
-                // PROCESSAR PROPRIEDADES
                 let propertiesFound = false;
                 let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
 
-                // MÉTODO 1: HasProperties
                 if (pset.HasProperties && pset.HasProperties.length > 0) {
                     pset.HasProperties.forEach(propHandle => {
                         const prop = props[propHandle.value];
@@ -196,23 +319,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 htmlContent += `</div>`;
             });
-        } else {
-            htmlContent += `
-                <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; text-align: center;">
-                    <h5 style="margin: 0; color: #856404;">⚠️ Nenhum Pset Encontrado</h5>
-                    <p style="margin: 5px 0 0 0; color: #856404;">Este elemento não possui conjuntos de propriedades (Psets) definidos.</p>
-                </div>
-            `;
         }
 
-        // 4. EXIBIR NO PAINEL
         details.innerHTML = htmlContent;
         panel.style.display = 'block';
         
         console.log(`📋 Elemento selecionado: ${elementName} (${elementType})`);
     }
 
-    // 🔥 FUNÇÃO AUXILIAR PARA FORMATAR PROPRIEDADES
     function formatProperty(propName, propValue) {
         if (typeof propValue === 'boolean') {
             propValue = propValue ? '✅ Sim' : '❌ Não';
@@ -233,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
-    // 🚀 INICIALIZAÇÃO SIMPLES
+    // 🚀 INICIALIZAÇÃO
     async function initializeViewer() {
         try {
             await loadMultipleIfcs(IFC_MODELS_TO_LOAD);
