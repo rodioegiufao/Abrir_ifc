@@ -4,7 +4,7 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 let viewer;
 let lastProps = null;
 
-// 🔥 VARIÁVEIS PARA MEDIÇÕES
+// 🔥 VARIÁVEIS PARA MEDIÇÕES XEOKIT
 let xeokitViewer;
 let distanceMeasurements;
 let distanceMeasurementsControl = null;
@@ -35,18 +35,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // 🔥 FUNÇÃO MELHORADA PARA SINCRONIZAR CÂMERAS
+    // 🔥 FUNÇÃO PARA SINCRONIZAR CÂMERAS
     function syncCamerasToXeokit() {
         if (!viewer || !xeokitViewer || !xeokitViewer.camera) {
-            console.warn("⚠️ Sincronização: viewer ou xeokit não disponível");
             return;
         }
         
         try {
-            // ✅ CORREÇÃO: Verifica se a estrutura da câmera existe
             const scene = viewer.context.getScene();
             if (!scene || !scene.camera) {
-                console.warn("⚠️ Sincronização: câmera do Three.js não disponível");
                 return;
             }
 
@@ -54,7 +51,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const threeControls = viewer.context.ifcCamera?.controls;
             
             if (!threeCamera || !threeControls) {
-                console.warn("⚠️ Sincronização: câmera ou controles não encontrados");
                 return;
             }
 
@@ -62,7 +58,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const threeTarget = threeControls.target;
 
             if (!threePos || !threeTarget) {
-                console.warn("⚠️ Sincronização: posição ou target inválidos");
                 return;
             }
 
@@ -75,42 +70,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 xeokitViewer.camera.perspective.fov = threeCamera.fov;
             }
             
-            console.log("📸 Câmera sincronizada:", {
-                eye: xeokitViewer.camera.eye,
-                look: xeokitViewer.camera.look,
-                fov: xeokitViewer.camera.perspective.fov
-            });
-            
         } catch (syncError) {
             console.warn("⚠️ Erro na sincronização de câmera:", syncError);
         }
     }
 
-    // 🔥 FUNÇÃO DE DEBUG PARA VERIFICAR O ESTADO DO XEOKIT
-    function debugXeokitState() {
-        console.group("🔍 DEBUG XEOKIT STATE");
-        console.log("📊 xeokitViewer:", !!xeokitViewer);
-        console.log("📊 distanceMeasurements:", !!distanceMeasurements);
-        console.log("📊 distanceMeasurementsControl:", !!distanceMeasurementsControl);
-        console.log("📊 xeokitContainer:", !!xeokitContainer);
-        
-        if (xeokitViewer) {
-            console.log("🎯 Camera:", xeokitViewer.camera ? "OK" : "MISSING");
-            console.log("🎯 Scene:", xeokitViewer.scene ? "OK" : "MISSING");
-        }
-        
-        // Verifica se as classes estão disponíveis
-        const xeokitSDK = window.xeokitSDK;
-        console.log("🔧 SDK disponível:", !!xeokitSDK);
-        if (xeokitSDK) {
-            console.log("🔧 DistanceMeasurementsControl:", !!xeokitSDK.DistanceMeasurementsControl);
-            console.log("🔧 DistanceMeasurementsMouseControl:", !!xeokitSDK.DistanceMeasurementsMouseControl);
-            console.log("🔧 DistanceMeasurementsPlugin:", !!xeokitSDK.DistanceMeasurementsPlugin);
-        }
-        console.groupEnd();
-    }
-
-    // 🔥 INICIALIZAR XEOKIT VIEWER (VERSÃO CORRIGIDA)
+    // 🔥 INICIALIZAR XEOKIT VIEWER (SEGUINDO A DOCUMENTAÇÃO OFICIAL)
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
@@ -120,9 +85,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error("❌ xeokitSDK não disponível");
                 return;
             }
-
-            // ✅ CORREÇÃO: Verifica se as classes necessárias existem
-            debugXeokitState();
 
             const viewerContainer = document.getElementById('viewer-container');
             if (!viewerContainer) {
@@ -177,49 +139,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             console.log("🎯 Canvas encontrado no DOM");
 
-            // ✅ CORREÇÃO: Inicializa o viewer
-            let viewerInitialized = false;
-            
+            // ✅ INICIALIZAÇÃO DO VIEWER XEOKIT (SEGUINDO A DOCUMENTAÇÃO)
             try {
-                console.log("🔄 Tentando inicializar com canvasId...");
                 xeokitViewer = new xeokitSDK.Viewer({
                     canvasId: "xeokit-canvas",
                     transparent: true,
                     alpha: true,
                     premultipliedAlpha: false
                 });
-                viewerInitialized = true;
-                console.log("✅ Viewer inicializado com canvasId");
-            } catch (idError) {
-                console.warn("⚠️ Falha com canvasId, tentando com canvasElement...", idError.message);
-                
-                try {
-                    xeokitViewer = new xeokitSDK.Viewer({
-                        canvasElement: canvasElement,
-                        transparent: true,
-                        alpha: true,
-                        premultipliedAlpha: false
-                    });
-                    viewerInitialized = true;
-                    console.log("✅ Viewer inicializado com canvasElement");
-                } catch (elementError) {
-                    console.error("❌ Falha com canvasElement:", elementError.message);
-                    throw new Error("Não foi possível inicializar o viewer com nenhum método");
-                }
+                console.log("✅ Viewer xeokit inicializado com sucesso");
+            } catch (error) {
+                console.error("❌ Erro ao inicializar viewer xeokit:", error);
+                return;
             }
 
-            if (!viewerInitialized || !xeokitViewer) {
-                throw new Error("Viewer não foi inicializado");
-            }
-
-            console.log("✅ xeokit viewer inicializado com sucesso.");
-
-            // ✅ CORREÇÃO: INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES - TESTANDO DIFERENTES ABORDAGENS
+            // ✅ INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES (SEGUINDO EXEMPLO 2 DA DOC)
             try {
                 const xeokitSDK = window.xeokitSDK;
                 
-                // Tenta diferentes abordagens para inicializar o plugin
                 if (xeokitSDK.DistanceMeasurementsPlugin) {
+                    // ✅ CORREÇÃO: Inicializa o plugin conforme documentação
                     distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
                         pointSize: 8,
                         lineWidth: 3,
@@ -227,7 +166,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         labelBackgroundColor: "rgba(0, 0, 0, 0.8)",
                         lineColor: "#FF0000"
                     });
-                    console.log("✅ Plugin de medições inicializado com DistanceMeasurementsPlugin");
+                    console.log("✅ DistanceMeasurementsPlugin inicializado");
+                    
                 } else {
                     console.error("❌ DistanceMeasurementsPlugin não disponível no SDK");
                     distanceMeasurements = null;
@@ -238,28 +178,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 distanceMeasurements = null;
             }
 
-            // ✅ CORREÇÃO: CONFIGURA SINCRONIZAÇÃO DE CÂMERA
+            // ✅ CONFIGURA SINCRONIZAÇÃO DE CÂMERA
             if (viewer && viewer.context) {
-                // Aguarda um pouco antes de configurar a sincronização
-                setTimeout(() => {
-                    try {
-                        const scene = viewer.context.getScene();
-                        if (scene && scene.camera) {
-                            // Configura listener para mudanças de câmera
-                            const originalUpdate = scene.camera.updateProjectionMatrix;
-                            scene.camera.updateProjectionMatrix = function() {
-                                originalUpdate.call(this);
-                                syncCamerasToXeokit();
-                            };
-                            
-                            // Sincroniza inicialmente
-                            syncCamerasToXeokit();
-                            console.log("✅ Sincronização de câmera configurada.");
-                        }
-                    } catch (syncError) {
-                        console.warn("⚠️ Erro ao configurar sincronização:", syncError);
-                    }
-                }, 2000);
+                // Sincronização contínua
+                setInterval(() => {
+                    syncCamerasToXeokit();
+                }, 100);
+                
+                console.log("✅ Sincronização de câmera configurada.");
             }
 
         } catch (e) {
@@ -267,7 +193,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (VERSÃO CORRIGIDA)
+    // 🔥 FUNÇÃO PARA INICIALIZAR O CONTROLE DE MEDIÇÕES (SEGUINDO EXEMPLO 2)
+    function initializeMeasurementsControl() {
+        if (!distanceMeasurements || !xeokitViewer) {
+            console.error("❌ Plugin ou viewer não disponível para inicializar controle");
+            return null;
+        }
+
+        const xeokitSDK = window.xeokitSDK;
+        
+        try {
+            // ✅ ABORDAGEM 1: Tenta DistanceMeasurementsMouseControl (EXEMPLO 2 DA DOC)
+            if (xeokitSDK.DistanceMeasurementsMouseControl) {
+                console.log("🔄 Inicializando DistanceMeasurementsMouseControl...");
+                
+                const control = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements, {
+                    pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
+                        active: true,
+                        zoomFactor: 2
+                    })
+                });
+                
+                // ✅ CONFIGURAÇÕES RECOMENDADAS (EXEMPLO 2)
+                control.snapToVertex = true;
+                control.snapToEdge = true;
+                
+                console.log("✅ DistanceMeasurementsMouseControl inicializado com sucesso");
+                return control;
+            }
+            
+            // ✅ ABORDAGEM 2: Tenta DistanceMeasurementsControl (fallback)
+            else if (xeokitSDK.DistanceMeasurementsControl) {
+                console.log("🔄 Inicializando DistanceMeasurementsControl (fallback)...");
+                
+                const control = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements, {
+                    pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
+                        active: true,
+                        zoomFactor: 2
+                    })
+                });
+                
+                console.log("✅ DistanceMeasurementsControl inicializado com sucesso");
+                return control;
+            }
+            else {
+                console.error("❌ Nenhum controle de medições disponível no SDK");
+                return null;
+            }
+            
+        } catch (controlError) {
+            console.error("❌ Erro ao inicializar controle de medições:", controlError);
+            return null;
+        }
+    }
+
+    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (SEGUINDO EXEMPLO 2)
     function toggleMeasurement() {
         isMeasuring = !isMeasuring;
         const button = document.getElementById('start-measurement');
@@ -284,71 +264,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // ✅ CORREÇÃO CRÍTICA: TESTA DIFERENTES ABORDAGENS PARA O CONTROLE
+        // ✅ INICIALIZA O CONTROLE SE NECESSÁRIO
         if (!distanceMeasurementsControl) {
-            const xeokitSDK = window.xeokitSDK;
+            distanceMeasurementsControl = initializeMeasurementsControl();
             
-            try {
-                // ABORDAGEM 1: Tenta DistanceMeasurementsControl tradicional
-                if (xeokitSDK.DistanceMeasurementsControl) {
-                    console.log("🔄 Tentando DistanceMeasurementsControl...");
-                    distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements, {
-                        pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
-                            active: true,
-                            zoomFactor: 2
-                        })
-                    });
-                    console.log("✅ DistanceMeasurementsControl inicializado com sucesso.");
-                }
-                // ABORDAGEM 2: Tenta DistanceMeasurementsMouseControl (mais moderna)
-                else if (xeokitSDK.DistanceMeasurementsMouseControl) {
-                    console.log("🔄 Tentando DistanceMeasurementsMouseControl...");
-                    distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements, {
-                        pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
-                            active: true,
-                            zoomFactor: 2
-                        })
-                    });
-                    console.log("✅ DistanceMeasurementsMouseControl inicializado com sucesso.");
-                }
-                // ABORDAGEM 3: Tenta método direto no plugin
-                else {
-                    console.log("🔄 Usando controle direto do plugin...");
-                    distanceMeasurementsControl = {
-                        activate: () => {
-                            distanceMeasurements.activate();
-                            console.log("✅ Plugin ativado diretamente");
-                        },
-                        deactivate: () => {
-                            distanceMeasurements.deactivate();
-                            console.log("✅ Plugin desativado diretamente");
-                        }
-                    };
-                }
-                
-            } catch (controlError) {
-                console.error("❌ Erro ao criar controle de medições:", controlError);
-                
-                // ABORDAGEM 4: Fallback - usa o plugin diretamente
-                console.log("🔄 Usando fallback direto...");
-                distanceMeasurementsControl = {
-                    activate: () => {
-                        try {
-                            distanceMeasurements.activate();
-                            console.log("✅ Plugin ativado via fallback");
-                        } catch (e) {
-                            console.error("❌ Erro ao ativar plugin:", e);
-                        }
-                    },
-                    deactivate: () => {
-                        try {
-                            distanceMeasurements.deactivate();
-                            console.log("✅ Plugin desativado via fallback");
-                        } catch (e) {
-                            console.error("❌ Erro ao desativar plugin:", e);
-                        }
-                    }
-                };
+            if (!distanceMeasurementsControl) {
+                console.error("❌ Não foi possível inicializar o controle de medições");
+                isMeasuring = false;
+                return;
             }
         }
 
@@ -361,23 +284,26 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.display = 'block';
             
             try {
-                // Sincroniza a câmera antes de ativar
-                syncCamerasToXeokit();
-                
-                // Ativa o controle
-                if (distanceMeasurementsControl && distanceMeasurementsControl.activate) {
+                // ✅ ATIVA O CONTROLE (SEGUINDO EXEMPLO 2)
+                if (typeof distanceMeasurementsControl.activate === 'function') {
                     distanceMeasurementsControl.activate();
-                    console.log("▶️ Modo de Medição ATIVADO.");
+                    console.log("▶️ DistanceMeasurementsMouseControl ATIVADO");
+                    
+                    // ✅ ADICIONA EVENT LISTENERS (EXEMPLO 4 DA DOC)
+                    setupMeasurementEvents();
+                    
                 } else {
                     console.error("❌ Método activate não disponível no controle");
+                    throw new Error("Controle não suporta ativação");
                 }
                 
-                debugXeokitState();
             } catch (activateError) {
                 console.error("❌ Erro ao ativar medições:", activateError);
                 isMeasuring = false;
                 button.textContent = 'Iniciar Medição';
                 button.classList.remove('active');
+                xeokitContainer.style.pointerEvents = 'none';
+                xeokitContainer.style.display = 'none';
             }
 
         } else {
@@ -389,15 +315,73 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.display = 'none';
 
             try {
-                // Desativa o controle
-                if (distanceMeasurementsControl && distanceMeasurementsControl.deactivate) {
+                // ✅ DESATIVA O CONTROLE
+                if (typeof distanceMeasurementsControl.deactivate === 'function') {
                     distanceMeasurementsControl.deactivate();
-                    console.log("⏸️ Modo de Medição DESATIVADO.");
+                    console.log("⏸️ DistanceMeasurementsMouseControl DESATIVADO");
                 }
+                
+                // Remove event listeners
+                removeMeasurementEvents();
+                
             } catch (deactivateError) {
                 console.error("❌ Erro ao desativar medições:", deactivateError);
             }
         }
+    }
+
+    // 🔥 CONFIGURA EVENTOS DAS MEDIÇÕES (SEGUINDO EXEMPLO 4 DA DOC)
+    function setupMeasurementEvents() {
+        if (!distanceMeasurements) return;
+
+        // Evento quando o mouse passa sobre uma medição
+        distanceMeasurements.on("mouseOver", (e) => {
+            console.log("🖱️ Mouse sobre medição:", e.measurement.id);
+            if (e.measurement && typeof e.measurement.setHighlighted === 'function') {
+                e.measurement.setHighlighted(true);
+            }
+        });
+
+        // Evento quando o mouse sai de uma medição
+        distanceMeasurements.on("mouseLeave", (e) => {
+            console.log("🖱️ Mouse saiu da medição:", e.measurement.id);
+            if (e.measurement && typeof e.measurement.setHighlighted === 'function') {
+                e.measurement.setHighlighted(false);
+            }
+        });
+
+        // Evento de clique com botão direito na medição
+        distanceMeasurements.on("contextMenu", (e) => {
+            console.log("📋 Context menu na medição:", e.measurement.id);
+            e.event.preventDefault();
+            // Aqui você pode mostrar um menu contextual personalizado
+        });
+
+        // Evento quando uma medição é criada
+        distanceMeasurements.on("created", (e) => {
+            console.log("📏 Medição criada:", e.measurement.id);
+        });
+
+        // Evento quando uma medição é destruída
+        distanceMeasurements.on("destroyed", (e) => {
+            console.log("🗑️ Medição destruída:", e.measurement.id);
+        });
+
+        console.log("✅ Event listeners de medições configurados");
+    }
+
+    // 🔥 REMOVE EVENT LISTENERS
+    function removeMeasurementEvents() {
+        if (!distanceMeasurements) return;
+        
+        // Remove todos os event listeners
+        distanceMeasurements.off("mouseOver");
+        distanceMeasurements.off("mouseLeave");
+        distanceMeasurements.off("contextMenu");
+        distanceMeasurements.off("created");
+        distanceMeasurements.off("destroyed");
+        
+        console.log("✅ Event listeners de medições removidos");
     }
 
     // ----------------------------------
@@ -441,14 +425,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Listener de clique para Limpar Medições
     document.getElementById('clear-measurements').addEventListener('click', () => {
-        if (distanceMeasurements) {
+        if (distanceMeasurements && typeof distanceMeasurements.clear === 'function') {
             distanceMeasurements.clear();
             console.log("🗑️ Todas as medições foram limpas.");
+        } else {
+            console.error("❌ Método clear não disponível no plugin");
         }
     });
 
-    // Listener de clique para Seleção (web-ifc-viewer)
+    // Listener de clique para Seleção (web-ifc-viewer) - DESABILITADO NO MODO MEDIÇÃO
     container.ondblclick = async (event) => {
+        // Se estiver no modo de medição, ignora a seleção do web-ifc-viewer
+        if (isMeasuring) {
+            console.log("📏 Modo de medição ativo - seleção do IFC ignorada");
+            return;
+        }
+
         const result = await viewer.IFC.selector.pick(true);
 
         if (!result) {
