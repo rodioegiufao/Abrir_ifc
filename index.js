@@ -76,7 +76,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 INICIALIZAR XEOKIT VIEWER
+    // 🔥 FUNÇÃO PARA GARANTIR QUE O CANVAS ESTEJA PRONTO
+    async function ensureCanvasReady() {
+        const canvas = document.getElementById('xeokit-canvas');
+        if (!canvas) {
+            console.error("❌ Canvas não encontrado");
+            return false;
+        }
+
+        // ✅ FORÇA REDIMENSIONAMENTO SE NECESSÁRIO
+        if (canvas.width === 0 || canvas.height === 0) {
+            console.warn("🔄 Canvas com dimensões zero, redimensionando...");
+            const container = document.getElementById('viewer-container');
+            if (container) {
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
+                console.log("✅ Canvas redimensionado para:", canvas.width, "x", canvas.height);
+            }
+        }
+
+        // ✅ AGUARDA O CANVAS ESTAR COMPLETAMENTE PRONTO
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        while (attempts < maxAttempts) {
+            if (canvas.width > 0 && canvas.height > 0) {
+                console.log("✅ Canvas pronto após", attempts + 1, "tentativas");
+                return true;
+            }
+            
+            console.log("🔄 Aguardando canvas... tentativa", attempts + 1);
+            await new Promise(resolve => setTimeout(resolve, 200));
+            attempts++;
+        }
+
+        console.error("❌ Timeout: Canvas não ficou pronto após", maxAttempts, "tentativas");
+        return false;
+    }
+
+    // 🔥 INICIALIZAR XEOKIT VIEWER (VERSÃO MAIS ROBUSTA)
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
@@ -93,11 +131,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // ✅ CORREÇÃO: Cria o container do xeokit
+            // ✅ CORREÇÃO: GARANTE QUE O CONTAINER XEOKIT EXISTA
             xeokitContainer = document.getElementById('xeokit-container');
             if (!xeokitContainer) {
                 xeokitContainer = document.createElement('div');
                 xeokitContainer.id = 'xeokit-container';
+                // ✅ ESTILO CRÍTICO: DEVE SER VISÍVEL E COM DIMENSÕES
                 xeokitContainer.style.cssText = `
                     position: absolute;
                     top: 0;
@@ -106,64 +145,101 @@ document.addEventListener('DOMContentLoaded', () => {
                     height: 100%;
                     z-index: 10;
                     pointer-events: none;
-                    display: none;
+                    display: block;  // ✅ MUDADO PARA block PARA GARANTIR VISIBILIDADE
+                    visibility: visible;
+                    opacity: 1;
                 `;
                 viewerContainer.appendChild(xeokitContainer);
                 console.log("✅ xeokit-container criado e anexado.");
             }
 
-            // ✅ CORREÇÃO: Cria o canvas com dimensões explícitas
+            // ✅ CORREÇÃO: CRIA O CANVAS COM ESTILO EXPLÍCITO
             let xeokitCanvas = document.getElementById('xeokit-canvas');
             if (!xeokitCanvas) {
                 xeokitCanvas = document.createElement('canvas');
                 xeokitCanvas.id = 'xeokit-canvas';
                 
-                // ✅ CORREÇÃO CRÍTICA: Define dimensões explícitas
-                xeokitCanvas.width = viewerContainer.clientWidth;
-                xeokitCanvas.height = viewerContainer.clientHeight;
+                // ✅ DIMENSÕES EXPLÍCITAS E ESTILO GARANTIDO
+                const containerWidth = viewerContainer.clientWidth;
+                const containerHeight = viewerContainer.clientHeight;
+                
+                xeokitCanvas.width = containerWidth;
+                xeokitCanvas.height = containerHeight;
                 
                 xeokitCanvas.style.cssText = `
-                    width: 100%;
-                    height: 100%;
+                    width: ${containerWidth}px;
+                    height: ${containerHeight}px;
                     display: block;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    visibility: visible;
+                    opacity: 1;
                 `;
                 
                 xeokitContainer.appendChild(xeokitCanvas);
                 console.log("✅ Canvas criado com dimensões:", xeokitCanvas.width, "x", xeokitCanvas.height);
-                
-                // ✅ AGUARDA O DOM ATUALIZAR E O CANVAS ESTAR PRONTO
-                await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            const canvasElement = document.getElementById('xeokit-canvas');
-            if (!canvasElement) {
-                throw new Error("Canvas não foi encontrado no DOM após criação");
+            // ✅ AGUARDA O CANVAS ESTAR PRONTO
+            const canvasReady = await ensureCanvasReady();
+            if (!canvasReady) {
+                throw new Error("Canvas não ficou pronto para inicialização");
             }
 
-            // ✅ VERIFICA SE O CANVAS TEM DIMENSÕES VÁLIDAS
-            if (canvasElement.width === 0 || canvasElement.height === 0) {
-                console.warn("⚠️ Canvas com dimensões zero, redefinindo...");
-                canvasElement.width = viewerContainer.clientWidth;
-                canvasElement.height = viewerContainer.clientHeight;
-            }
-
-            console.log("🎯 Canvas pronto com dimensões:", canvasElement.width, "x", canvasElement.height);
+            console.log("🎯 Canvas verificado e pronto para uso");
 
             // ✅ INICIALIZAÇÃO DO VIEWER XEOKIT
             try {
-                xeokitViewer = new xeokitSDK.Viewer({
-                    canvasId: "xeokit-canvas",
-                    transparent: true,
-                    alpha: true,
-                    premultipliedAlpha: false
-                });
-                console.log("✅ Viewer xeokit inicializado com sucesso");
+                console.log("🔄 Criando viewer xeokit...");
                 
-                // ✅ AGUARDA O VIEWER ESTAR COMPLETAMENTE INICIALIZADO
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // ✅ TENTA DIFERENTES MÉTODOS DE INICIALIZAÇÃO
+                let viewerInitialized = false;
                 
-            } catch (error) {
-                console.error("❌ Erro ao inicializar viewer xeokit:", error);
+                // Método 1: Com canvasId
+                try {
+                    xeokitViewer = new xeokitSDK.Viewer({
+                        canvasId: "xeokit-canvas",
+                        transparent: true,
+                        alpha: true,
+                        premultipliedAlpha: false
+                    });
+                    viewerInitialized = true;
+                    console.log("✅ Viewer xeokit inicializado com canvasId");
+                } catch (idError) {
+                    console.warn("⚠️ Falha com canvasId, tentando canvasElement...");
+                    
+                    // Método 2: Com canvasElement
+                    const canvasElement = document.getElementById('xeokit-canvas');
+                    if (canvasElement) {
+                        xeokitViewer = new xeokitSDK.Viewer({
+                            canvasElement: canvasElement,
+                            transparent: true,
+                            alpha: true,
+                            premultipliedAlpha: false
+                        });
+                        viewerInitialized = true;
+                        console.log("✅ Viewer xeokit inicializado com canvasElement");
+                    }
+                }
+
+                if (!viewerInitialized || !xeokitViewer) {
+                    throw new Error("Não foi possível inicializar o viewer xeokit");
+                }
+
+                // ✅ AGUARDA O VIEWER ESTABILIZAR
+                console.log("🔄 Aguardando viewer estabilizar...");
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // ✅ VERIFICA SE O VIEWER ESTÁ FUNCIONAL
+                if (!xeokitViewer.scene) {
+                    throw new Error("Viewer não tem scene inicializada");
+                }
+                
+                console.log("✅ Viewer xeokit completamente inicializado e estável");
+
+            } catch (viewerError) {
+                console.error("❌ Erro ao inicializar viewer xeokit:", viewerError);
                 return;
             }
 
@@ -205,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 FUNÇÃO PARA INICIALIZAR O POINTERLENS (AGORA SEPARADA E COM VERIFICAÇÕES)
+    // 🔥 FUNÇÃO PARA INICIALIZAR O POINTERLENS (SEM VERIFICAÇÃO DE CANVAS)
     function initializePointerLens() {
         if (!xeokitViewer) {
             console.error("❌ xeokitViewer não disponível para PointerLens");
@@ -218,22 +294,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (xeokitSDK.PointerLens) {
                 console.log("🔄 Inicializando PointerLens...");
                 
-                // ✅ VERIFICA SE O CANVAS DO VIEWER ESTÁ PRONTO
-                const canvas = document.getElementById('xeokit-canvas');
-                if (!canvas || canvas.width === 0 || canvas.height === 0) {
-                    console.error("❌ Canvas do xeokit não está pronto para PointerLens");
-                    return null;
-                }
-
-                // ✅ CORREÇÃO: Inicializa o PointerLens com configurações mais seguras
+                // ✅ CORREÇÃO: INICIALIZA SEM VERIFICAR CANVAS (O VIEWER JÁ FAZ ISSO)
                 const lens = new xeokitSDK.PointerLens(xeokitViewer, {
                     active: false, // Inicia desativado
-                    zoomFactor: 2,
-                    lensPosMarginLeft: 50,
-                    lensPosMarginTop: 50
+                    zoomFactor: 2
                 });
 
-                console.log("✅ PointerLens inicializado (inicialmente desativado)");
+                console.log("✅ PointerLens inicializado");
                 return lens;
                 
             } else {
@@ -256,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const xeokitSDK = window.xeokitSDK;
         
         try {
-            // ✅ INICIALIZA O POINTERLENS PRIMEIRO
+            // ✅ INICIALIZA O POINTERLENS
             if (!pointerLens) {
                 pointerLens = initializePointerLens();
             }
@@ -265,9 +332,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (xeokitSDK.DistanceMeasurementsMouseControl) {
                 console.log("🔄 Inicializando DistanceMeasurementsMouseControl...");
                 
-                const control = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements, {
-                    pointerLens: pointerLens
-                });
+                const controlConfig = {};
+                if (pointerLens) {
+                    controlConfig.pointerLens = pointerLens;
+                }
+                
+                const control = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements, controlConfig);
                 
                 control.snapToVertex = true;
                 control.snapToEdge = true;
@@ -280,9 +350,12 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (xeokitSDK.DistanceMeasurementsControl) {
                 console.log("🔄 Inicializando DistanceMeasurementsControl (fallback)...");
                 
-                const control = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements, {
-                    pointerLens: pointerLens
-                });
+                const controlConfig = {};
+                if (pointerLens) {
+                    controlConfig.pointerLens = pointerLens;
+                }
+                
+                const control = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements, controlConfig);
                 
                 console.log("✅ DistanceMeasurementsControl inicializado com sucesso");
                 return control;
@@ -298,64 +371,56 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (COM CORREÇÃO DO POINTERLENS)
+    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (SIMPLIFICADA)
     function toggleMeasurement() {
-        isMeasuring = !isMeasuring;
-        const button = document.getElementById('start-measurement');
-        
+        // ✅ VERIFICAÇÕES INICIAIS
         if (!xeokitViewer) {
             console.error("❌ xeokitViewer não inicializado.");
-            isMeasuring = false;
+            alert("Sistema de medições não está disponível. Aguarde a inicialização completa.");
             return;
         }
 
         if (!distanceMeasurements) {
             console.error("❌ distanceMeasurements não inicializado.");
-            isMeasuring = false;
+            alert("Plugin de medições não carregado.");
             return;
         }
 
         // ✅ INICIALIZA O CONTROLE SE NECESSÁRIO
         if (!distanceMeasurementsControl) {
+            console.log("🔄 Inicializando controle de medições...");
             distanceMeasurementsControl = initializeMeasurementsControl();
             
             if (!distanceMeasurementsControl) {
                 console.error("❌ Não foi possível inicializar o controle de medições");
-                isMeasuring = false;
+                alert("Erro ao inicializar controle de medições.");
                 return;
             }
         }
+
+        isMeasuring = !isMeasuring;
+        const button = document.getElementById('start-measurement');
 
         if (isMeasuring) {
             button.textContent = 'Parar Medição';
             button.classList.add('active');
             
-            // Torna o xeokit visível e interativo
-            xeokitContainer.style.pointerEvents = 'all';
-            xeokitContainer.style.display = 'block';
-            
             try {
-                // ✅ CORREÇÃO: VERIFICA SE O CANVAS ESTÁ PRONTO ANTES DE ATIVAR
-                const canvas = document.getElementById('xeokit-canvas');
-                if (!canvas || canvas.width === 0 || canvas.height === 0) {
-                    console.error("❌ Canvas não está pronto para medições");
-                    throw new Error("Canvas com dimensões zero");
-                }
-
-                console.log("🎯 Canvas verificado:", canvas.width, "x", canvas.height);
-
-                // ✅ ATIVA O CONTROLE DE MEDIÇÕES PRIMEIRO
+                // ✅ CORREÇÃO: ATIVA DIRETAMENTE SEM VERIFICAÇÕES COMPLEXAS
+                console.log("🔄 Ativando modo de medição...");
+                
+                // Torna o xeokit visível e interativo
+                xeokitContainer.style.pointerEvents = 'all';
+                xeokitContainer.style.display = 'block';
+                
+                // Ativa o controle
                 if (typeof distanceMeasurementsControl.activate === 'function') {
                     distanceMeasurementsControl.activate();
-                    console.log("▶️ DistanceMeasurementsMouseControl ATIVADO");
-                } else {
-                    console.error("❌ Método activate não disponível no controle");
-                    throw new Error("Controle não suporta ativação");
+                    console.log("✅ Modo de medição ATIVADO");
                 }
 
-                // ✅ ATIVA O POINTERLENS APÓS O CONTROLE (SE EXISTIR)
+                // Ativa o PointerLens se existir
                 if (pointerLens) {
-                    // Pequeno delay para garantir que tudo está estável
                     setTimeout(() => {
                         try {
                             pointerLens.active = true;
@@ -364,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         } catch (lensError) {
                             console.warn("⚠️ Erro ao ativar PointerLens:", lensError);
                         }
-                    }, 100);
+                    }, 500);
                 }
                 
                 setupMeasurementEvents();
@@ -374,32 +439,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 isMeasuring = false;
                 button.textContent = 'Iniciar Medição';
                 button.classList.remove('active');
-                xeokitContainer.style.pointerEvents = 'none';
-                xeokitContainer.style.display = 'none';
+                alert("Erro ao ativar medições. Tente novamente.");
             }
 
         } else {
             button.textContent = 'Iniciar Medição';
             button.classList.remove('active');
             
-            // Torna o xeokit invisível e não interativo
-            xeokitContainer.style.pointerEvents = 'none';
-            xeokitContainer.style.display = 'none';
-
             try {
-                // ✅ DESATIVA O POINTERLENS PRIMEIRO
+                console.log("🔄 Desativando modo de medição...");
+                
+                // Desativa o PointerLens primeiro
                 if (pointerLens) {
                     pointerLens.active = false;
                     pointerLens.visible = false;
-                    console.log("🔍 PointerLens desativado");
                 }
 
-                // ✅ DESATIVA O CONTROLE DE MEDIÇÕES
+                // Desativa o controle
                 if (typeof distanceMeasurementsControl.deactivate === 'function') {
                     distanceMeasurementsControl.deactivate();
-                    console.log("⏸️ DistanceMeasurementsMouseControl DESATIVADO");
                 }
+
+                // Torna o xeokit invisível
+                xeokitContainer.style.pointerEvents = 'none';
+                xeokitContainer.style.display = 'none';
                 
+                console.log("✅ Modo de medição DESATIVADO");
                 removeMeasurementEvents();
                 
             } catch (deactivateError) {
@@ -411,25 +476,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // 🔥 CONFIGURA EVENTOS DAS MEDIÇÕES
     function setupMeasurementEvents() {
         if (!distanceMeasurements) return;
-
-        distanceMeasurements.on("mouseOver", (e) => {
-            console.log("🖱️ Mouse sobre medição:", e.measurement.id);
-            if (e.measurement && typeof e.measurement.setHighlighted === 'function') {
-                e.measurement.setHighlighted(true);
-            }
-        });
-
-        distanceMeasurements.on("mouseLeave", (e) => {
-            console.log("🖱️ Mouse saiu da medição:", e.measurement.id);
-            if (e.measurement && typeof e.measurement.setHighlighted === 'function') {
-                e.measurement.setHighlighted(false);
-            }
-        });
-
-        distanceMeasurements.on("contextMenu", (e) => {
-            console.log("📋 Context menu na medição:", e.measurement.id);
-            e.event.preventDefault();
-        });
 
         distanceMeasurements.on("created", (e) => {
             console.log("📏 Medição criada:", e.measurement.id);
@@ -446,9 +492,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function removeMeasurementEvents() {
         if (!distanceMeasurements) return;
         
-        distanceMeasurements.off("mouseOver");
-        distanceMeasurements.off("mouseLeave");
-        distanceMeasurements.off("contextMenu");
         distanceMeasurements.off("created");
         distanceMeasurements.off("destroyed");
         
@@ -469,8 +512,11 @@ document.addEventListener('DOMContentLoaded', () => {
         USE_FAST_BOOLS: true
     });
     
-    // 3. Inicializa o xeokit viewer (para medições)
-    initializeXeokitViewer();
+    // 3. Inicializa o xeokit viewer (para medições) - COM DELAY PARA GARANTIR ESTABILIDADE
+    setTimeout(() => {
+        console.log("🔄 Iniciando inicialização do xeokit...");
+        initializeXeokitViewer();
+    }, 3000);
 
     // 4. Carrega os modelos IFC
     loadMultipleIfcs(IFC_MODELS_TO_LOAD);
@@ -479,18 +525,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Listener de clique para Medição
     document.getElementById('start-measurement').addEventListener('click', () => {
-        if (!xeokitViewer) {
-            console.error("❌ xeokitViewer não está disponível");
-            alert("Sistema de medições não está disponível. Recarregue a página.");
-            return;
-        }
-        
-        if (!distanceMeasurements) {
-            console.error("❌ Plugin de medições não está disponível");
-            alert("Plugin de medições não carregado.");
-            return;
-        }
-        
         toggleMeasurement();
     });
 
@@ -499,8 +533,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (distanceMeasurements && typeof distanceMeasurements.clear === 'function') {
             distanceMeasurements.clear();
             console.log("🗑️ Todas as medições foram limpas.");
-        } else {
-            console.error("❌ Método clear não disponível no plugin");
         }
     });
 
