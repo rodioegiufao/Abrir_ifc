@@ -59,29 +59,38 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
+            
+            // Verifica se o SDK foi carregado globalmente (no index.html)
+            const xeokitSDK = window.xeokitSDK;
+            if (!xeokitSDK || !xeokitSDK.Viewer) {
+                 console.error("❌ Erro ao inicializar xeokit viewer: xeokitSDK não está disponível globalmente. Verifique o import no index.html.");
+                 return;
+            }
 
             // 1. Cria o container do xeokit (que vai sobrepor o web-ifc-viewer)
-            xeokitContainer = document.createElement('div');
-            xeokitContainer.id = 'xeokit-container';
-            xeokitContainer.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                z-index: 10;
-                pointer-events: none; /* Inicia transparente e não interativo */
-                display: none; /* Escondido por padrão */
-            `;
-            document.getElementById('viewer-container').appendChild(xeokitContainer);
+            // ✅ CORREÇÃO 1: Garante que o container é buscado/criado corretamente no DOM.
+            xeokitContainer = document.getElementById('xeokit-container');
+            if (!xeokitContainer) {
+                xeokitContainer = document.createElement('div');
+                xeokitContainer.id = 'xeokit-container';
+                xeokitContainer.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    z-index: 10;
+                    pointer-events: none; /* Inicia transparente e não interativo */
+                    display: none; /* Escondido por padrão */
+                `;
+                document.getElementById('viewer-container').appendChild(xeokitContainer);
+                console.log("✅ xeokit-container criado e anexado ao DOM.");
+            }
 
             // 2. Inicializa o xeokit Viewer
-            const xeokitSDK = window.xeokitSDK; // Já importado globalmente no index.html
-            
-            // ✅ CORREÇÃO 1: Usar 'container' em vez de 'canvasId' ao passar o elemento DIV pai.
-            // Isso resolve o erro "Mandatory config expected: valid canvasId or canvasElement".
+            // Usando o elemento DOM correto para o Xeokit
             xeokitViewer = new xeokitSDK.Viewer({
-                container: xeokitContainer, // Passa o elemento DOM diretamente
+                container: xeokitContainer, 
                 transparent: true,
                 saoEnabled: true,
                 edgeThreshold: 5
@@ -95,8 +104,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 lineColor: "red"
             });
 
-            // O DistanceMeasurementsControl será criado sob demanda em toggleMeasurement.
-
             console.log("✅ xeokit viewer inicializado. Plugins prontos.");
 
             // Adiciona listener para sincronização de câmera
@@ -105,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
         } catch (e) {
-            console.error("❌ Erro ao inicializar xeokit viewer:", e);
+            console.error("❌ Erro catastrófico ao inicializar xeokit viewer:", e);
         }
     }
 
@@ -155,9 +162,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ... (O resto das funções e do código de inicialização) ...
-    
-    // 🔥 CONFIGURAÇÃO INICIAL
+    // ----------------------------------
+    // CONFIGURAÇÃO INICIAL
+    // ----------------------------------
     
     // 1. Cria o Viewer (web-ifc-viewer)
     viewer = CreateViewer(container);
@@ -236,12 +243,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const file = changed.target.files[0];
             if (file) {
                 // Para arquivos locais, usamos a função de carregamento de arquivos nativa do web-ifc-viewer
-                // true para limpar modelos existentes
+                // Não é necessário usar loadMultipleIfcs (que é otimizada para URLs)
                 try {
-                    const model = await viewer.IFC.loadIfc(file, true); 
+                    const model = await viewer.IFC.loadIfc(file, true); // true para limpar modelos existentes
                     
                     if (model && model.modelID !== undefined) {
-                         // Limpa a lista de modelos existentes
+                         // Limpa a lista de modelos existentes (já que loadIfc limpa o viewer)
                         loadedModels.clear(); 
                         loadedModels.set(model.modelID, {
                             visible: true,
@@ -250,7 +257,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         
                         console.log(`✅ Sucesso no carregamento local: ${file.name} (ID: ${model.modelID})`);
-                        await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
+                        // ✅ CORREÇÃO: Garante que o IFC Manager.get.spatialStructure existe antes de usá-lo
+                        if (viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
+                            await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
+                        } else {
+                             console.warn("⚠️ Não foi possível construir a estrutura espacial, IfcManager.get.spatialStructure não está pronto.");
+                        }
+
                         updateVisibilityControls();
                         viewer.context.fitToFrame([model.modelID]);
                     }
@@ -258,6 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error("❌ Erro ao carregar arquivo local IFC:", e);
                 }
                 document.getElementById('properties-panel').style.display = 'none';
+                // O objeto URL.createObjectURL não é necessário aqui
             }
         });
     }
@@ -278,8 +292,7 @@ async function loadMultipleIfcs(urls) {
     const loadPromises = urls.map(async (url, index) => {
         console.log(`📦 Tentando carregar: ${url}`);
         try {
-            // ✅ CORREÇÃO 2: Usar 'loadIfcUrl' para carregar strings de URL de assets estáticos.
-            // Isso previne o erro 'createObjectURL' que ocorre quando a string é mal interpretada.
+            // Usar 'loadIfcUrl' para carregar strings de URL de assets estáticos.
             const model = await viewer.IFC.loadIfcUrl(url, false); // false para NÃO limpar modelos existentes
             
             if (model && model.modelID !== undefined) {
@@ -304,10 +317,15 @@ async function loadMultipleIfcs(urls) {
     if (loadedIDs.length > 0) {
         console.log(`🎉 ${loadedIDs.length}/${urls.length} modelo(s) carregados!`);
         
-        // Constrói a estrutura espacial para todos os modelos carregados
-        const structurePromises = loadedIDs.map(id => viewer.IFC.loader.ifcManager.get.spatialStructure.build(id));
-        await Promise.all(structurePromises);
-        
+        // ✅ CORREÇÃO 2: Constrói a estrutura espacial APENAS se o IFC Manager estiver pronto.
+        if (viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
+             const structurePromises = loadedIDs.map(id => viewer.IFC.loader.ifcManager.get.spatialStructure.build(id));
+             await Promise.all(structurePromises);
+             console.log("✅ Estrutura espacial construída para modelos carregados.");
+        } else {
+             console.warn("⚠️ Não foi possível construir a estrutura espacial, IfcManager.get.spatialStructure não está pronto. Funcionalidades avançadas podem falhar.");
+        }
+
         // Ajusta a câmera para enquadrar todos os modelos
         viewer.context.fitToFrame(loadedIDs); 
         
