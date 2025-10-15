@@ -27,8 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
         newViewer.axes.setAxes();
         newViewer.grid.setGrid();
         newViewer.clipper.active = true;
-        // Ativa a ferramenta de medição logo no início
-        newViewer.measure.active = false;
+        // ❌ LINHA REMOVIDA DAQUI: newViewer.measure.active = false;
         return newViewer;
     }
 
@@ -198,6 +197,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // ============== INICIALIZAÇÃO PRINCIPAL ==============
     viewer = CreateViewer(container);
     
+    // ✅ CORREÇÃO: Define o estado inicial da medição APÓS a criação do viewer
+    viewer.measure.active = isMeasuring; 
+
     // Configura eventos de botão
     const startBtn = document.getElementById('start-measurement');
     const clearBtn = document.getElementById('clear-measurements');
@@ -225,7 +227,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.onclick = () => {
         if (isMeasuring) {
             // Se a medição estiver ativa, o clique adiciona um ponto de medição
-            viewer.measure.get== null ? viewer.measure.getDimensions() : viewer.measure.getDistance()
+            // O web-ifc-viewer usa getDistance() para medição linear
+            viewer.measure.getDistance() 
         }
     }
     
