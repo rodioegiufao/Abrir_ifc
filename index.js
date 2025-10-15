@@ -315,60 +315,94 @@ document.addEventListener('DOMContentLoaded', () => {
 // FUNÇÕES AUXILIARES
 // ----------------------------------
 
-// 🔥 Carrega múltiplos arquivos IFC de URLs
-async function loadMultipleIfcs(urls) {
-    console.log(`🔄 Iniciando carregamento de ${urls.length} modelo(s)...`);
-    
-    // Limpa a lista antes de carregar novos modelos
-    loadedModels.clear();
+// 🔥 Carrega múltiplos arquivos IFC de URLs (VERSÃO CORRIGIDA)
+    async function loadMultipleIfcs(urls) {
+        console.log(`🔄 Iniciando carregamento de ${urls.length} modelo(s)...`);
+        
+        // Limpa a lista antes de carregar novos modelos
+        loadedModels.clear();
 
-    const loadPromises = urls.map(async (url, index) => {
-        console.log(`📦 Tentando carregar: ${url}`);
-        try {
-            // Usar 'loadIfcUrl' para carregar strings de URL de assets estáticos.
-            const model = await viewer.IFC.loadIfcUrl(url, false); // false para NÃO limpar modelos existentes
-            
-            if (model && model.modelID !== undefined) {
-                loadedModels.set(model.modelID, {
-                    visible: true,
-                    name: url.split('/').pop(), // Usa o nome do arquivo como nome
-                    url: url
-                });
-                console.log(`✅ Sucesso no carregamento: ${url} (ID: ${model.modelID})`);
-                return model.modelID;
+        const loadPromises = urls.map(async (url, index) => {
+            console.log(`📦 Tentando carregar: ${url}`);
+            try {
+                // Usar 'loadIfcUrl' para carregar strings de URL de assets estáticos.
+                const model = await viewer.IFC.loadIfcUrl(url, false); // false para NÃO limpar modelos existentes
+                
+                if (model && model.modelID !== undefined) {
+                    loadedModels.set(model.modelID, {
+                        visible: true,
+                        name: url.split('/').pop(), // Usa o nome do arquivo como nome
+                        url: url
+                    });
+                    console.log(`✅ Sucesso no carregamento: ${url} (ID: ${model.modelID})`);
+                    return model.modelID;
+                }
+                return null;
+
+            } catch (e) {
+                console.error(`❌ Erro ao carregar ${url}:`, e);
+                return null;
             }
-            return null;
+        });
 
-        } catch (e) {
-            console.error(`❌ Erro ao carregar ${url}:`, e);
-            return null;
-        }
-    });
+        const loadedIDs = (await Promise.all(loadPromises)).filter(id => id !== null);
 
-    const loadedIDs = (await Promise.all(loadPromises)).filter(id => id !== null);
+        if (loadedIDs.length > 0) {
+            console.log(`🎉 ${loadedIDs.length}/${urls.length} modelo(s) carregados!`);
+            
+            // ✅ CORREÇÃO: Aguarda um pouco para garantir que o IFC Manager esteja pronto
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // ✅ CORREÇÃO MELHOR: Usa a API correta do web-ifc-viewer para construir estrutura espacial
+            try {
+                // Método 1: Tenta usar a API pública do viewer
+                if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.getSpatialStructure === 'function') {
+                    console.log("🔄 Construindo estrutura espacial via getSpatialStructure...");
+                    for (const modelID of loadedIDs) {
+                        await viewer.IFC.loader.ifcManager.getSpatialStructure(modelID);
+                    }
+                    console.log("✅ Estrutura espacial construída via getSpatialStructure.");
+                }
+                // Método 2: Tenta método alternativo
+                else if (viewer.IFC && viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
+                    console.log("🔄 Construindo estrutura espacial via spatialStructure.build...");
+                    const structurePromises = loadedIDs.map(id => 
+                        viewer.IFC.loader.ifcManager.get.spatialStructure.build(id)
+                    );
+                    await Promise.all(structurePromises);
+                    console.log("✅ Estrutura espacial construída via spatialStructure.build.");
+                }
+                // Método 3: Tenta método mais recente
+                else if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.createSubset === 'function') {
+                    console.log("🔄 Estrutura espacial será construída automaticamente pelo viewer...");
+                    // O viewer moderno constrói automaticamente
+                }
+                else {
+                    console.warn("⚠️ API de estrutura espacial não encontrada. Tentando método direto...");
+                    // Método de fallback: tenta acessar diretamente
+                    for (const modelID of loadedIDs) {
+                        try {
+                            await viewer.IFC.getSpatialStructure(modelID);
+                        } catch (e) {
+                            console.warn(`⚠️ Não foi possível construir estrutura para modelo ${modelID}:`, e.message);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn("⚠️ Estrutura espacial não pôde ser construída:", error.message);
+                console.log("💡 O visualizador funcionará, mas algumas funcionalidades podem estar limitadas.");
+            }
 
-    if (loadedIDs.length > 0) {
-        console.log(`🎉 ${loadedIDs.length}/${urls.length} modelo(s) carregados!`);
-        
-        // ✅ CORREÇÃO 2: Constrói a estrutura espacial APENAS se o IFC Manager estiver pronto.
-        if (viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
-             const structurePromises = loadedIDs.map(id => viewer.IFC.loader.ifcManager.get.spatialStructure.build(id));
-             await Promise.all(structurePromises);
-             console.log("✅ Estrutura espacial construída para modelos carregados.");
+            // Ajusta a câmera para enquadrar todos os modelos
+            viewer.context.fitToFrame(loadedIDs); 
+            
+            // Atualiza os controles de visibilidade
+            updateVisibilityControls();
+
         } else {
-             console.warn("⚠️ Não foi possível construir a estrutura espacial, IfcManager.get.spatialStructure não está pronto. Funcionalidades avançadas podem falhar.");
+            console.warn("⚠️ Nenhum modelo IFC foi carregado com sucesso.");
         }
-
-        // Ajusta a câmera para enquadrar todos os modelos
-        viewer.context.fitToFrame(loadedIDs); 
-        
-        // Atualiza os controles de visibilidade
-        updateVisibilityControls();
-
-    } else {
-        console.warn("⚠️ Nenhum modelo IFC foi carregado com sucesso.");
     }
-}
 
 
 // 🔥 Mostra as propriedades de um elemento
