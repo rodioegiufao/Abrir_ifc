@@ -1,13 +1,14 @@
 {
   "name": "ifcjs-viewer-101",
   "version": "1.0.0",
-  "description": "Basic source code for Web-IFC-Viewer",
+  "description": "Basic source code for Web-IFC-Viewer with Measurements",
   "main": "index.js",
   "scripts": {
     "build": "rollup -c ./rollup.config.js",
     "watch": "rollup -w -c ./rollup.config.js"
   },
   "dependencies": {
+    "@xeokit/xeokit-sdk": "^2.6.91",
     "web-ifc-viewer": "^1.0.218"
   },
   "devDependencies": {

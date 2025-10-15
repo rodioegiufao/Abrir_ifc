@@ -5,6 +5,12 @@ let viewer;
 let currentModelID = -1;
 let lastProps = null;
 
+// 🔥 VARIÁVEIS PARA MEDIÇÕES
+let xeokitViewer;
+let distanceMeasurements;
+let distanceMeasurementsControl;
+let isMeasuring = false;
+
 // ✅ LISTA DE ARQUIVOS IFC 
 const IFC_MODELS_TO_LOAD = [
     'models/01.ifc',
@@ -29,6 +35,123 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
+    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES
+    function initializeXeokitViewer() {
+        try {
+            // Verifica se o xeokit SDK está carregado
+            if (typeof window.xeokitSDK === 'undefined') {
+                console.error("❌ xeokit SDK não encontrado. Verifique se o arquivo foi carregado.");
+                return;
+            }
+
+            // Cria um container separado para o xeokit
+            const xeokitContainer = document.createElement('div');
+            xeokitContainer.id = 'xeokit-container';
+            container.appendChild(xeokitContainer);
+
+            // Cria canvas para o xeokit
+            const xeokitCanvas = document.createElement('canvas');
+            xeokitCanvas.id = 'xeokit-canvas';
+            xeokitContainer.appendChild(xeokitCanvas);
+
+            // Inicializa o viewer xeokit usando o SDK global
+            const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurementsMouseControl, PointerLens } = window.xeokitSDK;
+
+            xeokitViewer = new Viewer({
+                canvasId: "xeokit-canvas",
+                transparent: true,
+                alpha: true
+            });
+
+            // Configura os plugins de medição
+            distanceMeasurements = new DistanceMeasurementsPlugin(xeokitViewer, {
+                // Configurações opcionais para personalizar a aparência das medições
+                color: "#FF0000",
+                fontFamily: "Arial",
+                fontSize: 12
+            });
+
+            distanceMeasurementsControl = new DistanceMeasurementsMouseControl(distanceMeasurements, {
+                pointerLens: new PointerLens(xeokitViewer)
+            });
+
+            // Configura snapping para melhor precisão
+            distanceMeasurementsControl.snapToVertex = true;
+            distanceMeasurementsControl.snapToEdge = true;
+
+            console.log("✅ Plugin de medições xeokit inicializado");
+
+        } catch (error) {
+            console.error("❌ Erro ao inicializar xeokit:", error);
+        }
+    }
+
+    // 🔥 CONTROLES DE MEDIÇÃO
+    function setupMeasurementControls() {
+        const startBtn = document.getElementById('start-measurement');
+        const clearBtn = document.getElementById('clear-measurements');
+
+        startBtn.addEventListener('click', () => {
+            if (!isMeasuring) {
+                // Iniciar medição
+                try {
+                    if (!distanceMeasurementsControl) {
+                        console.error("❌ Controle de medições não inicializado");
+                        return;
+                    }
+
+                    distanceMeasurementsControl.activate();
+                    
+                    // Mostrar canvas do xeokit
+                    const xeokitCanvas = document.getElementById('xeokit-canvas');
+                    if (xeokitCanvas) {
+                        xeokitCanvas.style.display = 'block';
+                        xeokitCanvas.style.pointerEvents = 'auto';
+                    }
+                    
+                    startBtn.textContent = 'Parar Medição';
+                    startBtn.classList.add('active');
+                    isMeasuring = true;
+                    
+                    console.log("📏 Modo medição ativado");
+                } catch (error) {
+                    console.error("❌ Erro ao ativar medições:", error);
+                }
+            } else {
+                // Parar medição
+                try {
+                    distanceMeasurementsControl.deactivate();
+                    
+                    // Esconder canvas do xeokit
+                    const xeokitCanvas = document.getElementById('xeokit-canvas');
+                    if (xeokitCanvas) {
+                        xeokitCanvas.style.display = 'none';
+                        xeokitCanvas.style.pointerEvents = 'none';
+                    }
+                    
+                    startBtn.textContent = 'Iniciar Medição';
+                    startBtn.classList.remove('active');
+                    isMeasuring = false;
+                    
+                    console.log("📏 Modo medição desativado");
+                } catch (error) {
+                    console.error("❌ Erro ao desativar medições:", error);
+                }
+            }
+        });
+
+        clearBtn.addEventListener('click', () => {
+            try {
+                if (distanceMeasurements) {
+                    distanceMeasurements.clear();
+                    console.log("🗑️ Todas as medições removidas");
+                }
+            } catch (error) {
+                console.error("❌ Erro ao limpar medições:", error);
+            }
+        });
+    }
+
     // =======================================================
     // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (COM CORREÇÃO PARA ^1.0.218)
     // =======================================================
@@ -51,8 +174,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const model = await viewer.IFC.loadIfcUrl(url);
                 
                 // 💡 CORREÇÃO CRÍTICA AQUI: MÉTODO COMPATÍVEL COM ^1.0.218
-                // Força o cache do modelo a ser populado lendo o IfcProject (Express ID 1).
-                // Isso resolve o problema de "Handle não encontrado" na sua versão.
                 const ifcProject = await viewer.IFC.getSpatialStructure(model.modelID, false);
                 console.log(`✅ Cache populado lendo IfcProject (ID ${ifcProject.expressID}) para o modelo: ${url}`);
                 
@@ -303,9 +424,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         const propExpressID = propHandle.value;
                         const prop = props[propExpressID]; // Acesso no cache populado
                         
-                        // NOTE: Mesmo com a correção, esta versão da biblioteca pode falhar
-                        // se a busca recursiva no getProperties não for suficiente.
-                        
                         if (prop && prop.Name) {
                             propertiesFound = true;
                             const propName = prop.Name.value || 'Sem nome';
@@ -321,7 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             console.log(`   ✅ Propriedade encontrada (ID: ${propExpressID}): ${propName} = ${propValue}`);
                             propertiesHTML += formatProperty(propName, propValue);
                         } else {
-                            // Este é o erro que você estava vendo originalmente:
                             console.log(`   ❌ Propriedade não encontrada para handle: Handle {value: ${propExpressID}, type: 5}`);
                         }
                     });
@@ -392,6 +509,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 🚀 INICIALIZAÇÃO
     async function initializeViewer() {
         try {
+            // 🔥 INICIALIZA XEOKIT PRIMEIRO
+            initializeXeokitViewer();
+            setupMeasurementControls();
+            
+            // Depois carrega os modelos IFC
             await loadMultipleIfcs(IFC_MODELS_TO_LOAD);
         } catch (error) {
             console.error("🚨 Erro ao inicializar o visualizador:", error);
