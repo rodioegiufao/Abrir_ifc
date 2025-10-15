@@ -4,7 +4,7 @@ import { IfcViewerAPI } from 'web-ifc-viewer';
 let viewer;
 let lastProps = null;
 
-// 🔥 VARIÁVEIS PARA MEDIÇÕES XEOKIT
+// 🔥 VARIÁVEIS XEOKIT
 let xeokitViewer;
 let distanceMeasurements;
 let distanceMeasurementsControl = null;
@@ -36,26 +36,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // 🔥 FUNÇÃO PARA SINCRONIZAR CÂMERAS
+    // 🔥 SINCRONIZAÇÃO DE CÂMERAS
     function syncCamerasToXeokit() {
         if (!viewer || !xeokitViewer || !xeokitViewer.camera) return;
         try {
             const scene = viewer.context.getScene();
             if (!scene || !scene.camera) return;
-
             const threeCamera = scene.camera;
             const threeControls = viewer.context.ifcCamera?.controls;
             if (!threeCamera || !threeControls) return;
-
             const threePos = threeCamera.position;
             const threeTarget = threeControls.target;
             if (!threePos || !threeTarget) return;
 
             xeokitViewer.camera.eye = [threePos.x, threePos.y, threePos.z];
             xeokitViewer.camera.look = [threeTarget.x, threeTarget.y, threeTarget.z];
-            if (threeCamera.fov) {
-                xeokitViewer.camera.perspective.fov = threeCamera.fov;
-            }
+            if (threeCamera.fov) xeokitViewer.camera.perspective.fov = threeCamera.fov;
         } catch (err) {
             console.warn("⚠️ Erro na sincronização de câmera:", err);
         }
@@ -64,7 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function ensureCanvasReady() {
         const canvas = document.getElementById('xeokit-canvas');
         if (!canvas) return false;
-
         if (canvas.width === 0 || canvas.height === 0) {
             const container = document.getElementById('viewer-container');
             if (container) {
@@ -73,7 +68,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log("✅ Canvas redimensionado para:", canvas.width, "x", canvas.height);
             }
         }
-
         let attempts = 0;
         const maxAttempts = 10;
         while (attempts < maxAttempts) {
@@ -84,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     }
 
-    // 🔥 INICIALIZAÇÃO DO XEOKIT
+    // 🔥 INICIALIZA XEOKIT
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
@@ -101,16 +95,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!xeokitContainer) {
                 xeokitContainer = document.createElement('div');
                 xeokitContainer.id = 'xeokit-container';
-
-                // ✅ CORREÇÃO: Permite eventos e coloca acima do viewer IFC
                 xeokitContainer.style.cssText = `
                     position: absolute;
                     top: 0;
                     left: 0;
                     width: 100%;
                     height: 100%;
-                    z-index: 9999; 
-                    pointer-events: auto;
+                    z-index: 9999;
+                    pointer-events: none;
                     display: block;
                     visibility: visible;
                     opacity: 1;
@@ -124,14 +116,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!xeokitCanvas) {
                 xeokitCanvas = document.createElement('canvas');
                 xeokitCanvas.id = 'xeokit-canvas';
-
                 const containerWidth = viewerContainer.clientWidth;
                 const containerHeight = viewerContainer.clientHeight;
-
                 xeokitCanvas.width = containerWidth;
                 xeokitCanvas.height = containerHeight;
-
-                // ✅ CORREÇÃO: Canvas visível e interativo
                 xeokitCanvas.style.cssText = `
                     width: ${containerWidth}px;
                     height: ${containerHeight}px;
@@ -142,9 +130,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     visibility: visible;
                     opacity: 1;
                     background: transparent;
-                    pointer-events: auto;
+                    pointer-events: none;
                 `;
-
                 xeokitContainer.appendChild(xeokitCanvas);
                 console.log("✅ Canvas criado com dimensões:", xeokitCanvas.width, "x", xeokitCanvas.height);
             }
@@ -152,30 +139,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const canvasReady = await ensureCanvasReady();
             if (!canvasReady) throw new Error("Canvas não ficou pronto");
 
-            let viewerInitialized = false;
-            try {
-                xeokitViewer = new xeokitSDK.Viewer({
-                    canvasId: "xeokit-canvas",
-                    transparent: true,
-                    alpha: true,
-                    premultipliedAlpha: false
-                });
-                viewerInitialized = true;
-            } catch {
-                const canvasElement = document.getElementById('xeokit-canvas');
-                xeokitViewer = new xeokitSDK.Viewer({
-                    canvasElement: canvasElement,
-                    transparent: true,
-                    alpha: true,
-                    premultipliedAlpha: false
-                });
-                viewerInitialized = true;
-            }
+            xeokitViewer = new xeokitSDK.Viewer({
+                canvasId: "xeokit-canvas",
+                transparent: true,
+                alpha: true,
+                premultipliedAlpha: false
+            });
 
-            if (!viewerInitialized) throw new Error("Viewer não inicializado");
-            console.log("✅ Viewer xeokit completamente inicializado");
+            // ✅ Inicializa pausado
+            xeokitViewer.scene.active = false;
+            xeokitViewer.scene.input.enabled = false;
+            xeokitContainer.style.pointerEvents = 'none';
+            console.log("✅ Viewer xeokit inicializado e inativo");
 
-            // ✅ PLUGIN DE MEDIÇÕES
             distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
                 pointSize: 8,
                 lineWidth: 3,
@@ -185,10 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             console.log("✅ DistanceMeasurementsPlugin inicializado");
 
-            // ✅ Sincronização da câmera
-            if (viewer && viewer.context) {
-                setInterval(syncCamerasToXeokit, 150);
-            }
+            if (viewer && viewer.context) setInterval(syncCamerasToXeokit, 150);
 
         } catch (e) {
             console.error("❌ Erro ao inicializar xeokit viewer:", e);
@@ -216,9 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializeMeasurementsControl() {
         if (!distanceMeasurements || !xeokitViewer) return null;
         const xeokitSDK = window.xeokitSDK;
-
         if (!pointerLens) pointerLens = initializePointerLens();
-
         try {
             const control = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements, {
                 pointerLens: pointerLens
@@ -233,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 ALTERNAR MODO DE MEDIÇÃO
+    // 🔥 MODO DE MEDIÇÃO (AGORA CONTROLADO CORRETAMENTE)
     function toggleMeasurement() {
         if (!xeokitViewer || !distanceMeasurements) {
             alert("Sistema de medições não está pronto.");
@@ -254,10 +225,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isMeasuring) {
             button.textContent = 'Parar Medição';
             button.classList.add('active');
+            xeokitViewer.scene.active = true;
+            xeokitViewer.scene.input.enabled = true;
+            xeokitContainer.style.pointerEvents = 'auto';
+            xeokitViewer.start();
 
-            xeokitContainer.style.pointerEvents = 'auto'; // ✅ CORREÇÃO
-            if (distanceMeasurementsControl.activate) distanceMeasurementsControl.activate();
-
+            if (distanceMeasurementsControl.activate)
+                distanceMeasurementsControl.activate();
             if (pointerLens) {
                 pointerLens.active = true;
                 pointerLens.visible = true;
@@ -268,16 +242,18 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             button.textContent = 'Iniciar Medição';
             button.classList.remove('active');
-
             if (pointerLens) {
                 pointerLens.active = false;
                 pointerLens.visible = false;
             }
-            if (distanceMeasurementsControl.deactivate) distanceMeasurementsControl.deactivate();
-
-            xeokitContainer.style.pointerEvents = 'none'; // ✅ CORREÇÃO
-            console.log("✅ Modo de medição DESATIVADO");
+            if (distanceMeasurementsControl.deactivate)
+                distanceMeasurementsControl.deactivate();
+            xeokitContainer.style.pointerEvents = 'none';
+            xeokitViewer.scene.active = false;
+            xeokitViewer.scene.input.enabled = false;
+            xeokitViewer.stop();
             removeMeasurementEvents();
+            console.log("✅ Modo de medição DESATIVADO");
         }
     }
 
@@ -299,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ----------------------------------
-    // INICIALIZAÇÃO PRINCIPAL
+    // CONFIGURAÇÃO INICIAL
     // ----------------------------------
 
     viewer = CreateViewer(container);
@@ -316,6 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadMultipleIfcs(IFC_MODELS_TO_LOAD);
 
+    // BOTÕES
     document.getElementById('start-measurement').addEventListener('click', toggleMeasurement);
     document.getElementById('clear-measurements').addEventListener('click', () => {
         if (distanceMeasurements?.clear) {
@@ -342,8 +319,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.onkeydown = (event) => {
-        if (event.code === 'Escape' && isMeasuring) {
-            toggleMeasurement();
+        if (event.code === 'Escape') {
+            if (isMeasuring) {
+                toggleMeasurement();
+                return;
+            }
+            if (viewer?.IFC?.selector) {
+                viewer.IFC.selector.unpickIfcItems();
+                viewer.IFC.selector.unHighlightIfcItems();
+                document.getElementById('properties-panel').style.display = 'none';
+                lastProps = null;
+            }
         }
     };
 
@@ -364,7 +350,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
 });
 
 // ----------------------------------
@@ -373,6 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadMultipleIfcs(urls) {
     console.log(`🔄 Iniciando carregamento de ${urls.length} modelo(s)...`);
+    loadedModels.clear();
     const loadPromises = urls.map(async (url) => {
         try {
             const model = await viewer.IFC.loadIfcUrl(url, false);
@@ -387,9 +373,12 @@ async function loadMultipleIfcs(urls) {
             return null;
         }
     });
-
     const loadedIDs = (await Promise.all(loadPromises)).filter(Boolean);
-    if (loadedIDs.length > 0) viewer.context.fitToFrame(loadedIDs);
+    if (loadedIDs.length > 0) {
+        console.log(`🎉 ${loadedIDs.length}/${urls.length} modelo(s) carregados!`);
+        viewer.context.fitToFrame(loadedIDs);
+        updateVisibilityControls();
+    } else console.warn("⚠️ Nenhum modelo IFC foi carregado.");
 }
 
 function showProperties(props, id) {
@@ -400,28 +389,103 @@ function showProperties(props, id) {
     details.innerHTML = '';
     const table = document.createElement('table');
     table.className = 'properties-table';
-
     if (props.GlobalId) addRow(table, 'GlobalId', props.GlobalId.value);
     if (props.Name) addRow(table, 'Name', props.Name.value);
-
+    addHeader(table, 'Propriedades IFC');
     for (const key in props) {
         if (!['expressID', 'type', 'GlobalId', 'Name', 'properties'].includes(key)) {
             const prop = props[key];
             addRow(table, key, formatValue(prop));
         }
     }
-
+    if (props.properties) {
+        addHeader(table, 'Conjuntos de Propriedades (Psets)', true);
+        for (const psetName in props.properties) {
+            const pset = props.properties[psetName];
+            addPsetHeader(table, psetName);
+            for (const propName in pset) {
+                const prop = pset[propName];
+                addRow(table, propName, formatValue(prop));
+            }
+        }
+    }
     details.appendChild(table);
     panel.style.display = 'block';
 }
 
 function formatValue(prop) {
-    if (!prop) return 'N/A';
-    return prop.value ?? prop.toString();
+    if (prop === undefined || prop === null) return 'N/A';
+    if (prop.value !== undefined) return prop.value;
+    if (prop.map) return `[${prop.map(p => formatValue(p)).join(', ')}]`;
+    return prop.toString();
 }
 
 function addRow(table, key, value) {
     const row = table.insertRow();
     row.insertCell().textContent = key;
     row.insertCell().textContent = value;
+}
+
+function addHeader(table, text, isSubHeader = false) {
+    const row = table.insertRow();
+    const cell = row.insertCell();
+    cell.colSpan = 2;
+    cell.textContent = text;
+    cell.style.fontWeight = 'bold';
+    cell.style.backgroundColor = isSubHeader ? '#ddd' : '#bbb';
+    cell.style.paddingTop = '8px';
+    cell.style.paddingBottom = '8px';
+}
+
+function addPsetHeader(table, text) {
+    const row = table.insertRow();
+    const cell = row.insertCell();
+    cell.colSpan = 2;
+    cell.textContent = text;
+    cell.style.fontWeight = 'bold';
+    cell.style.backgroundColor = '#ccc';
+    cell.style.padding = '5px';
+}
+
+function createIfcTreeItem(modelID, name, isVisible) {
+    const item = document.createElement('div');
+    item.className = 'ifc-tree-item';
+    item.dataset.modelId = modelID;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = isVisible;
+    checkbox.addEventListener('change', () => toggleModelVisibility(modelID, checkbox.checked));
+    const label = document.createElement('label');
+    label.textContent = name;
+    item.appendChild(checkbox);
+    item.appendChild(label);
+    return item;
+}
+
+async function toggleModelVisibility(modelID, visible) {
+    if (!viewer || modelID === undefined) return;
+    const mesh = viewer.context.getScene().getMesh(modelID);
+    if (mesh) mesh.visible = visible;
+    const modelData = loadedModels.get(modelID);
+    if (modelData) {
+        modelData.visible = visible;
+        loadedModels.set(modelID, modelData);
+    }
+}
+
+function updateVisibilityControls() {
+    const controlPanel = document.getElementById('visibility-controls');
+    controlPanel.innerHTML = '';
+    if (loadedModels.size === 0) {
+        controlPanel.style.display = 'none';
+        return;
+    }
+    const title = document.createElement('h4');
+    title.textContent = '👁️ Modelos Carregados';
+    controlPanel.appendChild(title);
+    loadedModels.forEach((data, id) => {
+        const item = createIfcTreeItem(id, data.name, data.visible);
+        controlPanel.appendChild(item);
+    });
+    controlPanel.style.display = 'block';
 }
