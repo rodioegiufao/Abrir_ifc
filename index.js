@@ -2,8 +2,15 @@ import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
+let currentModelID = -1;
 let lastProps = null;
-let isMeasuring = false; // Controle de estado para medição
+
+// 🔥 VARIÁVEIS PARA MEDIÇÕES
+let xeokitViewer;
+let distanceMeasurements;
+let distanceMeasurementsControl;
+let isMeasuring = false;
+let xeokitContainer; // Definido para fácil acesso aos estilos e DOM
 
 // ✅ LISTA DE ARQUIVOS IFC 
 const IFC_MODELS_TO_LOAD = [
@@ -18,7 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const container = document.getElementById('viewer-container');
 
-    // 1. Inicializa o viewer principal (web-ifc-viewer/Three.js)
     function CreateViewer(container) {
         const newViewer = new IfcViewerAPI({
             container,
@@ -27,8 +33,75 @@ document.addEventListener('DOMContentLoaded', () => {
         newViewer.axes.setAxes();
         newViewer.grid.setGrid();
         newViewer.clipper.active = true;
-        // ❌ LINHA REMOVIDA DAQUI: newViewer.measure.active = false;
         return newViewer;
+    }
+
+    // 🔥 FUNÇÃO PARA SINCRONIZAR CÂMERAS (Fundamental para manter os dois viewers alinhados)
+    const syncCameras = (threeJSCamera, orbitControls, xeokitViewer) => {
+        if (!xeokitViewer || !xeokitViewer.camera) return;
+
+        const threePos = threeJSCamera.position;
+        const threeTarget = orbitControls.target;
+
+        // 1. Sincroniza posição e orientação
+        xeokitViewer.camera.eye = [threePos.x, threePos.y, threePos.z];
+        xeokitViewer.camera.look = [threeTarget.x, threeTarget.y, threeTarget.z];
+        xeokitViewer.camera.up = [0, 0, 1]; // Assume que o Up-axis do IFC é Z
+        
+        // 2. Sincroniza projeção (se Three.js for Perspective)
+        if (threeJSCamera.isPerspectiveCamera) {
+            xeokitViewer.camera.projection = "perspective";
+            // É mais difícil sincronizar FOV e Zoom perfeitamente, mas a posição já ajuda muito
+        } else {
+             // Se for Orthographic, você teria que calcular a dimensão da caixa de projeção
+             xeokitViewer.camera.projection = "perspective";
+        }
+    };
+
+    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (VERSÃO CORRIGIDA)
+    async function initializeXeokitViewer() {
+        try {
+            console.log("🔄 Inicializando xeokit viewer...");
+            
+            // Cria o container do xeokit (ele ficará POR CIMA do THREE.js)
+            xeokitContainer = document.createElement('div');
+            xeokitContainer.id = 'xeokit-container';
+            xeokitContainer.style.position = 'absolute';
+            xeokitContainer.style.top = '0';
+            xeokitContainer.style.left = '0';
+            xeokitContainer.style.width = '100%';
+            xeokitContainer.style.height = '100%';
+            xeokitContainer.style.pointerEvents = 'none'; // Importante para permitir cliques no IFC.js
+            container.appendChild(xeokitContainer);
+
+            // Importa o xeokit (disponível globalmente devido ao index.html)
+            const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurement } = window.xeokitSDK;
+
+            xeokitViewer = new Viewer({
+                canvasId: xeokitContainer.id,
+                transparent: true, // Garante que o IFC.js de baixo seja visível
+                backgroundColor: [0, 0, 0, 0], // Fundo transparente
+                sao: false,
+                pbr: false
+            });
+
+            // Plugin de Medições
+            distanceMeasurements = new DistanceMeasurementsPlugin(xeokitViewer, {});
+
+            // Controle de Medição
+            distanceMeasurementsControl = new DistanceMeasurement(distanceMeasurements);
+            distanceMeasurementsControl.visible = false; // Começa invisível
+
+            console.log("✅ xeokit viewer inicializado com sucesso.");
+
+            // Adiciona listener de sincronização da câmera (Three.js -> xeokit)
+            viewer.context.renderer.onBeforeRender = () => {
+                syncCameras(viewer.context.camera, viewer.context.ifcCamera.getCameraControls(), xeokitViewer);
+            };
+
+        } catch (e) {
+            console.error("❌ Erro ao inicializar xeokit viewer:", e);
+        }
     }
 
     // 🔥 FUNÇÃO PARA CARREGAR MODELOS IFC MULTIPLOS (para URLs estáticas)
@@ -73,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 FUNÇÃO PARA EXIBIR PROPRIEDADES (Mantida)
+    // 🔥 FUNÇÃO PARA EXIBIR PROPRIEDADES 
     function showProperties(props, id) {
         const panel = document.getElementById('properties-panel');
         const details = document.getElementById('element-details');
@@ -133,30 +206,41 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO
+    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (VOLTOU AO XEOKIT)
     function toggleMeasurement() {
         const btn = document.getElementById('start-measurement');
-        const containerDiv = document.getElementById('viewer-container');
 
         isMeasuring = !isMeasuring;
-        viewer.measure.active = isMeasuring;
 
         if (isMeasuring) {
             // ATIVA
             btn.textContent = 'Parar Medição (ESC)';
             btn.classList.add('active');
-            containerDiv.style.cursor = 'crosshair';
-            console.log("📏 Modo de medição ATIVADO. Clique para marcar pontos.");
+            
+            // O xeokit container precisa aceitar eventos do mouse no modo de medição
+            if (xeokitContainer) xeokitContainer.style.pointerEvents = 'auto'; 
+            
+            if (distanceMeasurementsControl) {
+                distanceMeasurementsControl.visible = true;
+                distanceMeasurementsControl.plotting = true;
+            }
+            console.log("📏 Modo de medição ATIVADO (xeokit). Clique nos vértices.");
         } else {
             // DESATIVA
             btn.textContent = 'Iniciar Medição';
             btn.classList.remove('active');
-            containerDiv.style.cursor = 'grab'; // Restaura o cursor de navegação
+            
+            // O xeokit container deve ignorar eventos do mouse fora do modo de medição
+            if (xeokitContainer) xeokitContainer.style.pointerEvents = 'none'; 
+
+            if (distanceMeasurementsControl) {
+                distanceMeasurementsControl.plotting = false; // Para de desenhar
+            }
             console.log("📏 Modo de medição DESATIVADO.");
         }
     }
 
-    // 🔥 FUNÇÃO PARA CRIAR CONTROLES DE VISIBILIDADE DOS MODELOS (Mantida)
+    // 🔥 FUNÇÃO PARA CRIAR CONTROLES DE VISIBILIDADE DOS MODELOS 
     function updateVisibilityControls() {
         const controlsDiv = document.getElementById('visibility-controls');
         const modelKeys = Array.from(loadedModels.keys());
@@ -197,9 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ============== INICIALIZAÇÃO PRINCIPAL ==============
     viewer = CreateViewer(container);
     
-    // ✅ CORREÇÃO: Define o estado inicial da medição APÓS a criação do viewer
-    viewer.measure.active = isMeasuring; 
-
     // Configura eventos de botão
     const startBtn = document.getElementById('start-measurement');
     const clearBtn = document.getElementById('clear-measurements');
@@ -208,33 +289,26 @@ document.addEventListener('DOMContentLoaded', () => {
         startBtn.onclick = toggleMeasurement;
     }
     if (clearBtn) {
-        // Limpa todas as medições visuais na cena
+        // Limpa todas as medições visuais na cena do xeokit
         clearBtn.onclick = () => {
-            viewer.measure.removeTextAll();
-            viewer.measure.removeDimensionsAll();
+            if (distanceMeasurements) {
+                distanceMeasurements.clear();
+            }
             console.log("Medições limpas.");
         };
     }
 
-    // Carrega os modelos IFC iniciais
+    // Carrega os modelos IFC iniciais e inicializa o xeokit
     loadMultipleIfcs(IFC_MODELS_TO_LOAD);
+    initializeXeokitViewer();
 
     console.log("🎉 Aplicação inicializada com sucesso!");
 
     // ============== EVENTOS DE INTERAÇÃO COM O USUÁRIO ==============
     
-    // EVENTO DE CLIQUE ÚNICO (Para Medição)
-    window.onclick = () => {
-        if (isMeasuring) {
-            // Se a medição estiver ativa, o clique adiciona um ponto de medição
-            // O web-ifc-viewer usa getDistance() para medição linear
-            viewer.measure.getDistance() 
-        }
-    }
-    
     // EVENTO DE DUPLO CLIQUE (Para Seleção/Propriedades)
     window.ondblclick = async () => {
-        // Se estiver no modo de medição, o dblclick é usado para finalizar a linha, então ignoramos a seleção.
+        // Ignora a seleção se estiver no modo de medição
         if (isMeasuring) return; 
 
         // Tenta selecionar o elemento no web-ifc-viewer
@@ -267,7 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 toggleMeasurement();
                 return;
             }
-             // Se não estiver medindo, limpa a seleção e as medições pendentes
+             // Se não estiver medindo, limpa a seleção
             if (viewer?.IFC?.selector) {
                 viewer.IFC.selector.unpickIfcItems();
                 viewer.IFC.selector.unHighlightIfcItems();
