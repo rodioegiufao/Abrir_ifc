@@ -2,7 +2,6 @@ import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
-let currentModelID = -1;
 let lastProps = null;
 
 // 🔥 VARIÁVEIS PARA MEDIÇÕES
@@ -10,7 +9,7 @@ let xeokitViewer;
 let distanceMeasurements;
 let distanceMeasurementsControl;
 let isMeasuring = false;
-let xeokitContainer; // Definido globalmente para fácil acesso aos estilos
+let xeokitContainer; // Definido para fácil acesso aos estilos e DOM
 
 // ✅ LISTA DE ARQUIVOS IFC 
 const IFC_MODELS_TO_LOAD = [
@@ -58,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
         xeokitViewer.scene.redraw();
     };
 
-    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (COM SINCRONIZAÇÃO)
+    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
@@ -68,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             console.log("✅ xeokit SDK importado:", Object.keys(xeokitSDK).slice(0, 10).concat('...'));
 
-            // 1. Cria um contêiner para o xeokit DENTRO do viewer-container
+            // 1. Cria o contêiner do Xeokit (se não existir, o que não deve acontecer)
             xeokitContainer = document.createElement('div');
             xeokitContainer.id = 'xeokit-container';
             xeokitContainer.style.position = 'absolute';
@@ -76,19 +75,19 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.left = '0';
             xeokitContainer.style.width = '100%';
             xeokitContainer.style.height = '100%';
-            xeokitContainer.style.pointerEvents = 'none'; // Inicialmente, permite que eventos passem
+            xeokitContainer.style.pointerEvents = 'none'; 
             
-            // 🔥 CORREÇÃO 1: Anexa o contêiner ao DOM antes de inicializar o Viewer
+            // 2. CORREÇÃO 1: Garante que o contêiner está anexado *antes* de inicializar o Viewer
             document.getElementById('viewer-container').appendChild(xeokitContainer);
 
-            // 2. Inicializa o xeokit Viewer
+            // 3. Inicializa o xeokit Viewer, passando o ID do elemento
             xeokitViewer = new xeokitSDK.Viewer({
-                canvasId: xeokitContainer.id,
-                transparent: true, // Garante que o viewer IFC seja visto
+                canvasId: xeokitContainer.id, // O ID agora é garantidamente válido no DOM
+                transparent: true, 
                 sRGBOutput: true
             });
 
-            // 3. Configura a sincronização da câmera do Three.js para o Xeokit
+            // 4. Configura a sincronização da câmera do Three.js para o Xeokit
             const threeJSCamera = viewer.context.camera;
             const orbitControls = viewer.context.controls;
 
@@ -98,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Sincroniza a câmera na inicialização
             syncCameras(threeJSCamera, orbitControls, xeokitViewer);
 
-            // 4. Inicializa o plugin de medições
+            // 5. Inicializa o plugin de medições
             distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
                 fontFamily: "sans-serif",
                 fontSize: "14px",
@@ -107,13 +106,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 labelBackgroundColor: "rgba(255, 255, 255, 0.7)" 
             });
 
-            // 5. Adiciona o controle de mouse para medições de distância
+            // 6. Adiciona o controle de mouse para medições de distância
             distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements);
 
             console.log("✅ Plugin de medições xeokit inicializado com sucesso");
             
         } catch (error) {
-            // Se o Xeokit falhar, desativa o botão de medição
             console.error("❌ Erro ao inicializar xeokit viewer:", error.message || error);
             const startBtn = document.getElementById('start-measurement');
             if (startBtn) {
@@ -158,7 +156,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("🚫 Modo medição desativado");
         }
         
-        // Garante que o xeokit redesenhe após a mudança de estado
         if (xeokitViewer) xeokitViewer.scene.redraw();
     };
 
@@ -173,7 +170,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------------------------
     // FUNÇÕES DE SUPORTE
     // -----------------------------------------------------------
-
+    
+    // 🔥 CORREÇÃO 2: Garante que estamos passando o objeto de configuração correto
     const loadMultipleIfcs = async (ifcUrls) => {
         if (viewer && ifcUrls && ifcUrls.length > 0) {
             console.log(`🔄 Iniciando carregamento de ${ifcUrls.length} modelo(s)...`);
@@ -181,14 +179,16 @@ document.addEventListener('DOMContentLoaded', () => {
             for (const ifcUrl of ifcUrls) {
                 console.log(`📦 Tentando carregar: ${ifcUrl}`);
                 try {
-                    const model = await viewer.IFC.loadIfcUrl({
+                    // Prepara o objeto de configuração para o loadIfcUrl
+                    const loadConfig = {
                         url: ifcUrl, 
                         wasmsPath: 'wasm/', 
                         caching: true, 
                         autoSetWasm: true 
-                    });
+                    };
                     
-                    // 🔥 CORREÇÃO 2: Verifica se o modelo foi carregado com sucesso
+                    const model = await viewer.IFC.loadIfcUrl(loadConfig);
+                    
                     if (model && model.modelID !== undefined) { 
                         loadedModels.set(model.modelID, {
                             visible: true,
@@ -197,20 +197,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         console.log(`✅ Sucesso: ${ifcUrl.split('/').pop()} (ID: ${model.modelID})`);
                         
-                        // Força o cache das propriedades para a seleção ser rápida
                         await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
                         console.log(`✅ Cache populado para o modelo: ${ifcUrl.split('/').pop()}`);
                     } else {
+                        // Se model for null ou inválido, apenas emite o aviso.
                         console.warn(`⚠️ Aviso: O carregamento de ${ifcUrl} falhou, ignorando o modelo.`);
                     }
                 } catch (error) {
-                    console.error(`❌ Erro ao carregar o modelo ${ifcUrl}:`, error.message || error);
+                    // O erro de fetch 404 é capturado aqui
+                    console.error(`❌ Erro fatal ao carregar o modelo ${ifcUrl}:`, error.message || error);
                 }
             }
             console.log(`🎉 ${loadedModels.size}/${ifcUrls.length} modelo(s) carregados!`);
             updateVisibilityControls();
             
-            // Foca a câmera em todos os modelos carregados, se houver algum
             if (loadedModels.size > 0) {
                 viewer.context.fitToFrame(loadedModels.keys()); 
             }
@@ -219,7 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     function updateVisibilityControls() {
-        // ... (resto da função updateVisibilityControls permanece o mesmo)
         const controlsDiv = document.getElementById('visibility-controls');
         controlsDiv.style.display = 'block';
         controlsDiv.innerHTML = '<h4>👁️ Visibilidade dos Modelos</h4>';
@@ -252,25 +251,21 @@ document.addEventListener('DOMContentLoaded', () => {
         loadedModels.set(modelID, modelData);
 
         viewer.IFC.loader.ifcManager.setVisibility(modelID, visible);
-
-        // O xeokit não precisa de sincronização de visibilidade, pois desenha apenas as medições.
     }
 
     function showProperties(props, id) {
-        // ... (resto da função showProperties permanece o mesmo)
         const panel = document.getElementById('properties-panel');
         const details = document.getElementById('element-details');
         
         document.getElementById('element-title').textContent = `ID ${id}: ${props.type || 'Elemento'}`;
         details.innerHTML = ''; 
 
-        // Função recursiva para exibir subpropriedades (Psets, etc)
         const createPropertyTable = (properties, container) => {
             const table = document.createElement('table');
             table.className = 'props-table';
             
             for (const key in properties) {
-                if (key === 'expressID' || key === 'type') continue; // Ignora chaves internas
+                if (key === 'expressID' || key === 'type') continue;
                 
                 const value = properties[key];
                 const tr = document.createElement('tr');
@@ -282,7 +277,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const td = document.createElement('td');
                 
                 if (typeof value === 'object' && value !== null) {
-                    // Verifica se é uma lista de Psets ou um único Pset
                     if (Array.isArray(value)) {
                         td.textContent = `[${value.length} Itens]`;
                         
@@ -292,7 +286,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const summary = document.createElement('summary');
                                 summary.textContent = item.Name;
                                 subSection.appendChild(summary);
-                                // Verifica se item.properties existe antes de chamar recursivamente
                                 if (item.properties) {
                                     createPropertyTable(item.properties, subSection);
                                 }
@@ -300,16 +293,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         });
                         
-                        tr.remove(); // Remove a linha principal, pois já criamos o details abaixo
+                        tr.remove(); 
                     } else if (value.value !== undefined) {
-                        // É uma propriedade simples com valor (e.g., IfcLabel: { value: 'nome', type: 1 })
                         td.textContent = value.value;
                     } else {
-                        // É um objeto aninhado que queremos detalhar (e.g., Pset com Name e Properties)
-                        
                         const subSection = document.createElement('details');
                         const summary = document.createElement('summary');
-                        summary.textContent = value.Name || 'Detalhes';
+                        summary.textContent = value.Name || key;
                         subSection.appendChild(summary);
                          if (value.properties) {
                             createPropertyTable(value.properties, subSection);
@@ -318,13 +308,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         container.appendChild(subSection);
                         
-                        tr.remove(); // Remove a linha principal
+                        tr.remove(); 
                     }
                 } else {
                     td.textContent = value;
                 }
                 
-                if (tr.parentElement) { // Garante que a linha não foi removida
+                if (tr.parentElement) {
                     tr.appendChild(td);
                     table.appendChild(tr);
                 }
@@ -350,7 +340,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('start-measurement').onclick = toggleMeasurement;
         document.getElementById('clear-measurements').onclick = clearMeasurements;
 
-        // Se a medição estiver ativa, desliga a rotação do three.js
         if (isMeasuring) {
              viewer.context.controls.enabled = false;
         }
@@ -363,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // CLIQUE PARA SELEÇÃO DE PROPRIEDADES (apenas se a medição estiver desativada)
     window.ondblclick = async () => {
-        if (isMeasuring) return; // Ignora se o modo de medição estiver ativo
+        if (isMeasuring) return; 
 
         const result = await viewer.IFC.selector.pickIfcItem(true);
         if (!result) {
@@ -376,7 +365,6 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.IFC.selector.unHighlightIfcItems();
         viewer.IFC.selector.highlightIfcItem(result.object, false);
         
-        // O parâmetro 'true' (pesquisa profunda/recursiva) funciona agora que forçamos o cache.
         const props = await viewer.IFC.getProperties(result.modelID, result.id, true);
         
         lastProps = props; 
@@ -408,10 +396,30 @@ document.addEventListener('DOMContentLoaded', () => {
         input.addEventListener("change", async (changed) => {
             const file = changed.target.files[0];
             if (file) {
-                const ifcURL = URL.createObjectURL(file);
-                await loadMultipleIfcs([ifcURL]); 
+                // Para arquivos locais, usamos a função de carregamento de arquivos nativa do web-ifc-viewer
+                // Não é necessário usar loadMultipleIfcs (que é otimizada para URLs)
+                try {
+                    const model = await viewer.IFC.loadIfc(file, true); // true para limpar modelos existentes
+                    
+                    if (model && model.modelID !== undefined) {
+                         // Limpa a lista de modelos existentes (já que loadIfc limpa o viewer)
+                        loadedModels.clear(); 
+                        loadedModels.set(model.modelID, {
+                            visible: true,
+                            name: file.name,
+                            url: `local://${file.name}`
+                        });
+                        
+                        console.log(`✅ Sucesso no carregamento local: ${file.name} (ID: ${model.modelID})`);
+                        await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
+                        updateVisibilityControls();
+                        viewer.context.fitToFrame([model.modelID]);
+                    }
+                } catch (e) {
+                    console.error("❌ Erro ao carregar arquivo local IFC:", e);
+                }
                 document.getElementById('properties-panel').style.display = 'none';
-                URL.revokeObjectURL(ifcURL); // Limpa o objeto URL
+                // O objeto URL.createObjectURL não é necessário aqui
             }
         });
     }
