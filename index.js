@@ -10,6 +10,7 @@ let distanceMeasurements;
 let distanceMeasurementsControl = null;
 let isMeasuring = false;
 let xeokitContainer;
+let pointerLens; // ✅ VARIÁVEL PARA O POINTERLENS
 
 // ✅ LISTA DE ARQUIVOS IFC 
 const IFC_MODELS_TO_LOAD = [
@@ -75,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 INICIALIZAR XEOKIT VIEWER (SEGUINDO A DOCUMENTAÇÃO OFICIAL)
+    // 🔥 INICIALIZAR XEOKIT VIEWER
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
@@ -139,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             console.log("🎯 Canvas encontrado no DOM");
 
-            // ✅ INICIALIZAÇÃO DO VIEWER XEOKIT (SEGUINDO A DOCUMENTAÇÃO)
+            // ✅ INICIALIZAÇÃO DO VIEWER XEOKIT
             try {
                 xeokitViewer = new xeokitSDK.Viewer({
                     canvasId: "xeokit-canvas",
@@ -153,12 +154,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // ✅ INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES (SEGUINDO EXEMPLO 2 DA DOC)
+            // ✅ INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES
             try {
                 const xeokitSDK = window.xeokitSDK;
                 
                 if (xeokitSDK.DistanceMeasurementsPlugin) {
-                    // ✅ CORREÇÃO: Inicializa o plugin conforme documentação
                     distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
                         pointSize: 8,
                         lineWidth: 3,
@@ -178,9 +178,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 distanceMeasurements = null;
             }
 
+            // ✅ INICIALIZAÇÃO DO POINTERLENS (CÍRCULO DE AUMENTO)
+            try {
+                const xeokitSDK = window.xeokitSDK;
+                if (xeokitSDK.PointerLens) {
+                    pointerLens = new xeokitSDK.PointerLens(xeokitViewer, {
+                        active: true,
+                        zoomFactor: 3, // ✅ AUMENTADO PARA MELHOR VISUALIZAÇÃO
+                        lensPosMarginLeft: 50,
+                        lensPosMarginTop: 50
+                    });
+                    console.log("✅ PointerLens inicializado");
+                } else {
+                    console.warn("⚠️ PointerLens não disponível no SDK");
+                }
+            } catch (lensError) {
+                console.warn("⚠️ Erro ao inicializar PointerLens:", lensError);
+            }
+
             // ✅ CONFIGURA SINCRONIZAÇÃO DE CÂMERA
             if (viewer && viewer.context) {
-                // Sincronização contínua
                 setInterval(() => {
                     syncCamerasToXeokit();
                 }, 100);
@@ -193,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 FUNÇÃO PARA INICIALIZAR O CONTROLE DE MEDIÇÕES (SEGUINDO EXEMPLO 2)
+    // 🔥 FUNÇÃO PARA INICIALIZAR O CONTROLE DE MEDIÇÕES (COM POINTERLENS CORRIGIDO)
     function initializeMeasurementsControl() {
         if (!distanceMeasurements || !xeokitViewer) {
             console.error("❌ Plugin ou viewer não disponível para inicializar controle");
@@ -203,18 +220,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const xeokitSDK = window.xeokitSDK;
         
         try {
-            // ✅ ABORDAGEM 1: Tenta DistanceMeasurementsMouseControl (EXEMPLO 2 DA DOC)
+            // ✅ ABORDAGEM 1: Tenta DistanceMeasurementsMouseControl
             if (xeokitSDK.DistanceMeasurementsMouseControl) {
                 console.log("🔄 Inicializando DistanceMeasurementsMouseControl...");
                 
                 const control = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements, {
-                    pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
-                        active: true,
-                        zoomFactor: 2
-                    })
+                    pointerLens: pointerLens // ✅ USA O POINTERLENS JÁ INICIALIZADO
                 });
                 
-                // ✅ CONFIGURAÇÕES RECOMENDADAS (EXEMPLO 2)
+                // ✅ CONFIGURAÇÕES PARA MELHOR PRECISÃO
                 control.snapToVertex = true;
                 control.snapToEdge = true;
                 
@@ -227,10 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log("🔄 Inicializando DistanceMeasurementsControl (fallback)...");
                 
                 const control = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements, {
-                    pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
-                        active: true,
-                        zoomFactor: 2
-                    })
+                    pointerLens: pointerLens // ✅ USA O POINTERLENS JÁ INICIALIZADO
                 });
                 
                 console.log("✅ DistanceMeasurementsControl inicializado com sucesso");
@@ -247,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (SEGUINDO EXEMPLO 2)
+    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO
     function toggleMeasurement() {
         isMeasuring = !isMeasuring;
         const button = document.getElementById('start-measurement');
@@ -284,12 +295,18 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.display = 'block';
             
             try {
-                // ✅ ATIVA O CONTROLE (SEGUINDO EXEMPLO 2)
+                // ✅ ATIVA O POINTERLENS PRIMEIRO
+                if (pointerLens) {
+                    pointerLens.active = true;
+                    pointerLens.visible = true;
+                    console.log("🔍 PointerLens ativado");
+                }
+                
+                // ✅ ATIVA O CONTROLE DE MEDIÇÕES
                 if (typeof distanceMeasurementsControl.activate === 'function') {
                     distanceMeasurementsControl.activate();
                     console.log("▶️ DistanceMeasurementsMouseControl ATIVADO");
                     
-                    // ✅ ADICIONA EVENT LISTENERS (EXEMPLO 4 DA DOC)
                     setupMeasurementEvents();
                     
                 } else {
@@ -304,6 +321,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 button.classList.remove('active');
                 xeokitContainer.style.pointerEvents = 'none';
                 xeokitContainer.style.display = 'none';
+                
+                // Desativa o PointerLens em caso de erro
+                if (pointerLens) {
+                    pointerLens.active = false;
+                    pointerLens.visible = false;
+                }
             }
 
         } else {
@@ -315,13 +338,19 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.display = 'none';
 
             try {
-                // ✅ DESATIVA O CONTROLE
+                // ✅ DESATIVA O CONTROLE DE MEDIÇÕES
                 if (typeof distanceMeasurementsControl.deactivate === 'function') {
                     distanceMeasurementsControl.deactivate();
                     console.log("⏸️ DistanceMeasurementsMouseControl DESATIVADO");
                 }
                 
-                // Remove event listeners
+                // ✅ DESATIVA O POINTERLENS
+                if (pointerLens) {
+                    pointerLens.active = false;
+                    pointerLens.visible = false;
+                    console.log("🔍 PointerLens desativado");
+                }
+                
                 removeMeasurementEvents();
                 
             } catch (deactivateError) {
@@ -330,11 +359,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 CONFIGURA EVENTOS DAS MEDIÇÕES (SEGUINDO EXEMPLO 4 DA DOC)
+    // 🔥 CONFIGURA EVENTOS DAS MEDIÇÕES
     function setupMeasurementEvents() {
         if (!distanceMeasurements) return;
 
-        // Evento quando o mouse passa sobre uma medição
         distanceMeasurements.on("mouseOver", (e) => {
             console.log("🖱️ Mouse sobre medição:", e.measurement.id);
             if (e.measurement && typeof e.measurement.setHighlighted === 'function') {
@@ -342,7 +370,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Evento quando o mouse sai de uma medição
         distanceMeasurements.on("mouseLeave", (e) => {
             console.log("🖱️ Mouse saiu da medição:", e.measurement.id);
             if (e.measurement && typeof e.measurement.setHighlighted === 'function') {
@@ -350,19 +377,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Evento de clique com botão direito na medição
         distanceMeasurements.on("contextMenu", (e) => {
             console.log("📋 Context menu na medição:", e.measurement.id);
             e.event.preventDefault();
-            // Aqui você pode mostrar um menu contextual personalizado
         });
 
-        // Evento quando uma medição é criada
         distanceMeasurements.on("created", (e) => {
             console.log("📏 Medição criada:", e.measurement.id);
         });
 
-        // Evento quando uma medição é destruída
         distanceMeasurements.on("destroyed", (e) => {
             console.log("🗑️ Medição destruída:", e.measurement.id);
         });
@@ -374,7 +397,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function removeMeasurementEvents() {
         if (!distanceMeasurements) return;
         
-        // Remove todos os event listeners
         distanceMeasurements.off("mouseOver");
         distanceMeasurements.off("mouseLeave");
         distanceMeasurements.off("contextMenu");
@@ -433,9 +455,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Listener de clique para Seleção (web-ifc-viewer) - DESABILITADO NO MODO MEDIÇÃO
+    // Listener de clique para Seleção (web-ifc-viewer)
     container.ondblclick = async (event) => {
-        // Se estiver no modo de medição, ignora a seleção do web-ifc-viewer
         if (isMeasuring) {
             console.log("📏 Modo de medição ativo - seleção do IFC ignorada");
             return;
@@ -513,10 +534,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ----------------------------------
-// FUNÇÕES AUXILIARES
+// FUNÇÕES AUXILIARES (MANTIDAS IGUAIS)
 // ----------------------------------
 
-// 🔥 Carrega múltiplos arquivos IFC de URLs
 async function loadMultipleIfcs(urls) {
     console.log(`🔄 Iniciando carregamento de ${urls.length} modelo(s)...`);
     
@@ -553,19 +573,9 @@ async function loadMultipleIfcs(urls) {
         
         try {
             if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.getSpatialStructure === 'function') {
-                console.log("🔄 Construindo estrutura espacial via getSpatialStructure...");
                 for (const modelID of loadedIDs) {
                     await viewer.IFC.loader.ifcManager.getSpatialStructure(modelID);
                 }
-                console.log("✅ Estrutura espacial construída via getSpatialStructure.");
-            }
-            else if (viewer.IFC && viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
-                console.log("🔄 Construindo estrutura espacial via spatialStructure.build...");
-                const structurePromises = loadedIDs.map(id => 
-                    viewer.IFC.loader.ifcManager.get.spatialStructure.build(id)
-                );
-                await Promise.all(structurePromises);
-                console.log("✅ Estrutura espacial construída via spatialStructure.build.");
             }
         } catch (error) {
             console.warn("⚠️ Estrutura espacial não pôde ser construída:", error.message);
@@ -579,7 +589,6 @@ async function loadMultipleIfcs(urls) {
     }
 }
 
-// 🔥 Mostra as propriedades de um elemento
 function showProperties(props, id) {
     const propertiesPanel = document.getElementById('properties-panel');
     const detailsContainer = document.getElementById('element-details');
@@ -623,7 +632,6 @@ function showProperties(props, id) {
     propertiesPanel.style.display = 'block';
 }
 
-// 🔥 Helper para formatar o valor da propriedade
 function formatValue(prop) {
     if (prop === undefined || prop === null) return 'N/A';
     if (prop.value !== undefined) {
@@ -635,14 +643,12 @@ function formatValue(prop) {
     return prop.toString();
 }
 
-// 🔥 Helper para adicionar linha na tabela de propriedades
 function addRow(table, key, value) {
     const row = table.insertRow();
     row.insertCell().textContent = key;
     row.insertCell().textContent = value;
 }
 
-// 🔥 Helper para adicionar cabeçalho na tabela de propriedades
 function addHeader(table, text, isSubHeader = false) {
     const row = table.insertRow();
     const cell = row.insertCell();
@@ -655,7 +661,6 @@ function addHeader(table, text, isSubHeader = false) {
     cell.style.paddingBottom = '8px';
 }
 
-// 🔥 Helper para adicionar cabeçalho Pset
 function addPsetHeader(table, text) {
     const row = table.insertRow();
     const cell = row.insertCell();
@@ -667,7 +672,6 @@ function addPsetHeader(table, text) {
     cell.style.marginTop = '5px';
 }
 
-// 🔥 Cria o item de controle de visibilidade
 function createIfcTreeItem(modelID, name, isVisible) {
     const item = document.createElement('div');
     item.className = 'ifc-tree-item';
@@ -686,7 +690,6 @@ function createIfcTreeItem(modelID, name, isVisible) {
     return item;
 }
 
-// 🔥 Alterna a visibilidade do modelo
 async function toggleModelVisibility(modelID, visible) {
     if (!viewer || modelID === undefined) return;
 
@@ -703,7 +706,6 @@ async function toggleModelVisibility(modelID, visible) {
     }
 }
 
-// 🔥 Atualiza o painel de controle de visibilidade
 function updateVisibilityControls() {
     const controlPanel = document.getElementById('visibility-controls');
     controlPanel.innerHTML = '';
