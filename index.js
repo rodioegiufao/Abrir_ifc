@@ -22,7 +22,6 @@ const IFC_MODELS_TO_LOAD = [
 let loadedModels = new Map();
 
 document.addEventListener('DOMContentLoaded', () => {
-
     const container = document.getElementById('viewer-container');
 
     function CreateViewer(container) {
@@ -57,27 +56,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function ensureCanvasReady() {
-        const canvas = document.getElementById('xeokit-canvas');
-        if (!canvas) return false;
-        if (canvas.width === 0 || canvas.height === 0) {
-            const container = document.getElementById('viewer-container');
-            if (container) {
-                canvas.width = container.clientWidth;
-                canvas.height = container.clientHeight;
-                console.log("✅ Canvas redimensionado para:", canvas.width, "x", canvas.height);
-            }
-        }
-        let attempts = 0;
-        const maxAttempts = 10;
-        while (attempts < maxAttempts) {
-            if (canvas.width > 0 && canvas.height > 0) return true;
-            await new Promise(resolve => setTimeout(resolve, 200));
-            attempts++;
-        }
-        return false;
-    }
-
     // 🔥 INICIALIZA XEOKIT
     async function initializeXeokitViewer() {
         try {
@@ -91,77 +69,83 @@ document.addEventListener('DOMContentLoaded', () => {
             const viewerContainer = document.getElementById('viewer-container');
             if (!viewerContainer) return;
 
-            xeokitContainer = document.getElementById('xeokit-container');
-            if (!xeokitContainer) {
-                xeokitContainer = document.createElement('div');
-                xeokitContainer.id = 'xeokit-container';
-                xeokitContainer.style.cssText = `
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    z-index: 9999;
-                    pointer-events: none;
-                    display: block;
-                    visibility: visible;
-                    opacity: 1;
-                    background: transparent;
-                `;
-                viewerContainer.appendChild(xeokitContainer);
-                console.log("✅ xeokit-container criado e anexado.");
+            // Remove container existente se houver
+            const existingContainer = document.getElementById('xeokit-container');
+            if (existingContainer) {
+                existingContainer.remove();
             }
 
-            let xeokitCanvas = document.getElementById('xeokit-canvas');
-            if (!xeokitCanvas) {
-                xeokitCanvas = document.createElement('canvas');
-                xeokitCanvas.id = 'xeokit-canvas';
-                const containerWidth = viewerContainer.clientWidth;
-                const containerHeight = viewerContainer.clientHeight;
-                xeokitCanvas.width = containerWidth;
-                xeokitCanvas.height = containerHeight;
-                xeokitCanvas.style.cssText = `
-                    width: ${containerWidth}px;
-                    height: ${containerHeight}px;
-                    display: block;
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    visibility: visible;
-                    opacity: 1;
-                    background: transparent;
-                    pointer-events: none;
-                `;
-                xeokitContainer.appendChild(xeokitCanvas);
-                console.log("✅ Canvas criado com dimensões:", xeokitCanvas.width, "x", xeokitCanvas.height);
-            }
+            xeokitContainer = document.createElement('div');
+            xeokitContainer.id = 'xeokit-container';
+            xeokitContainer.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 10;
+                pointer-events: none;
+                display: block;
+                visibility: visible;
+                opacity: 1;
+                background: transparent;
+            `;
+            viewerContainer.appendChild(xeokitContainer);
 
-            const canvasReady = await ensureCanvasReady();
-            if (!canvasReady) throw new Error("Canvas não ficou pronto");
+            const xeokitCanvas = document.createElement('canvas');
+            xeokitCanvas.id = 'xeokit-canvas';
+            xeokitCanvas.width = viewerContainer.clientWidth;
+            xeokitCanvas.height = viewerContainer.clientHeight;
+            xeokitCanvas.style.cssText = `
+                width: 100%;
+                height: 100%;
+                display: block;
+                position: absolute;
+                top: 0;
+                left: 0;
+                visibility: visible;
+                opacity: 1;
+                background: transparent;
+                pointer-events: none;
+            `;
+            xeokitContainer.appendChild(xeokitCanvas);
 
+            // 🔥 CONFIGURAÇÃO CORRETA DO XEOKIT
             xeokitViewer = new xeokitSDK.Viewer({
                 canvasId: "xeokit-canvas",
                 transparent: true,
                 alpha: true,
-                premultipliedAlpha: false
+                premultipliedAlpha: false,
+                antialias: true
             });
 
-            // ✅ Inicializa pausado
-            xeokitViewer.scene.active = false;
+            // Configurações importantes para medições
+            xeokitViewer.scene.input.pickSurface = true; // Permite picking na superfície
+            xeokitViewer.scene.input.pickSurfaceNormals = true; // Importante para snapping
+
+            // Inicialmente desativado
             xeokitViewer.scene.input.enabled = false;
             xeokitContainer.style.pointerEvents = 'none';
-            console.log("✅ Viewer xeokit inicializado e inativo");
 
+            console.log("✅ Viewer xeokit inicializado");
+
+            // 🔥 INICIALIZA PLUGIN DE MEDIÇÕES
             distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
-                pointSize: 8,
-                lineWidth: 3,
-                fontColor: "#FFFFFF",
-                labelBackgroundColor: "rgba(0, 0, 0, 0.8)",
-                lineColor: "#FF0000"
+                pointSize: 6,
+                lineWidth: 2,
+                fontColor: "#000000",
+                labelBackgroundColor: "rgba(255, 255, 255, 0.8)",
+                lineColor: "#FF0000",
+                snapToVertex: true,
+                snapToEdge: true
             });
+
             console.log("✅ DistanceMeasurementsPlugin inicializado");
 
-            if (viewer && viewer.context) setInterval(syncCamerasToXeokit, 150);
+            // Sincroniza câmeras periodicamente
+            if (viewer) {
+                setInterval(syncCamerasToXeokit, 100);
+            }
 
         } catch (e) {
             console.error("❌ Erro ao inicializar xeokit viewer:", e);
@@ -175,7 +159,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const lens = new xeokitSDK.PointerLens(xeokitViewer, {
                 active: false,
-                zoomFactor: 2
+                zoomFactor: 2.0,
+                visible: false
             });
             console.log("✅ PointerLens inicializado");
             return lens;
@@ -189,13 +174,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializeMeasurementsControl() {
         if (!distanceMeasurements || !xeokitViewer) return null;
         const xeokitSDK = window.xeokitSDK;
-        if (!pointerLens) pointerLens = initializePointerLens();
+        
+        if (!pointerLens) {
+            pointerLens = initializePointerLens();
+        }
+        
         try {
             const control = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements, {
                 pointerLens: pointerLens
             });
+            
+            // 🔥 CONFIGURAÇÕES IMPORTANTES PARA SNAPPING
             control.snapToVertex = true;
             control.snapToEdge = true;
+            control.snapToInstance = true;
+            
             console.log("✅ DistanceMeasurementsMouseControl inicializado");
             return control;
         } catch (err) {
@@ -204,7 +197,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 🔥 MODO DE MEDIÇÃO (AGORA CONTROLADO CORRETAMENTE)
+    // 🔥 CARREGA MODELO SIMPLES NO XEOKIT PARA TESTE
+    async function loadSimpleGeometryInXeokit() {
+        if (!xeokitViewer) return;
+        
+        const xeokitSDK = window.xeokitSDK;
+        
+        // Cria uma geometria simples para teste
+        const box = new xeokitSDK.Mesh(xeokitViewer.scene, {
+            id: "test-box",
+            geometry: new xeokitSDK.BoxGeometry(xeokitViewer.scene),
+            material: new xeokitSDK.PhongMaterial(xeokitViewer.scene, {
+                diffuse: [0.2, 0.6, 1.0],
+                transparent: true,
+                opacity: 0.8
+            }),
+            position: [0, 2, 0],
+            scale: [2, 2, 2]
+        });
+        
+        console.log("✅ Geometria de teste carregada no xeokit");
+    }
+
+    // 🔥 MODO DE MEDIÇÃO
     function toggleMeasurement() {
         if (!xeokitViewer || !distanceMeasurements) {
             alert("Sistema de medições não está pronto.");
@@ -226,14 +241,17 @@ document.addEventListener('DOMContentLoaded', () => {
             button.textContent = 'Parar Medição';
             button.classList.add('active');
 
-            // ✅ Ativa renderização e eventos do xeokit
-            xeokitViewer.scene.active = true;
+            // ✅ ATIVA COMPLETAMENTE O XEOKIT
             xeokitViewer.scene.input.enabled = true;
             xeokitContainer.style.pointerEvents = 'auto';
+            xeokitViewer.scene.active = true;
 
-            if (distanceMeasurementsControl.activate)
+            // Ativa o controle
+            if (distanceMeasurementsControl.activate) {
                 distanceMeasurementsControl.activate();
+            }
 
+            // Ativa pointer lens
             if (pointerLens) {
                 pointerLens.active = true;
                 pointerLens.visible = true;
@@ -241,35 +259,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
             setupMeasurementEvents();
             console.log("✅ Modo de medição ATIVADO");
+
+            // 🔥 CARREGA GEOMETRIA DE TESTE SE NECESSÁRIO
+            loadSimpleGeometryInXeokit();
+
         } else {
             button.textContent = 'Iniciar Medição';
             button.classList.remove('active');
 
+            // Desativa pointer lens
             if (pointerLens) {
                 pointerLens.active = false;
                 pointerLens.visible = false;
             }
-            if (distanceMeasurementsControl.deactivate)
+
+            // Desativa controle
+            if (distanceMeasurementsControl && distanceMeasurementsControl.deactivate) {
                 distanceMeasurementsControl.deactivate();
+            }
 
+            // Desativa xeokit
             xeokitContainer.style.pointerEvents = 'none';
-            xeokitViewer.scene.active = false;
             xeokitViewer.scene.input.enabled = false;
-            removeMeasurementEvents();
+            xeokitViewer.scene.active = false;
 
+            removeMeasurementEvents();
             console.log("✅ Modo de medição DESATIVADO");
         }
     }
 
-
     // 🔥 EVENTOS DE MEDIÇÃO
     function setupMeasurementEvents() {
         if (!distanceMeasurements) return;
+        
         distanceMeasurements.on("created", (e) => {
-            console.log("📏 Medição criada:", e.measurement.id);
+            console.log("📏 Medição criada:", e.measurement);
         });
+        
         distanceMeasurements.on("destroyed", (e) => {
-            console.log("🗑️ Medição destruída:", e.measurement.id);
+            console.log("🗑️ Medição destruída:", e.measurement);
+        });
+        
+        distanceMeasurements.on("mouseOver", (e) => {
+            console.log("🖱️ Mouse sobre medição:", e.measurement);
         });
     }
 
@@ -277,6 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!distanceMeasurements) return;
         distanceMeasurements.off("created");
         distanceMeasurements.off("destroyed");
+        distanceMeasurements.off("mouseOver");
     }
 
     // ----------------------------------
@@ -290,10 +323,11 @@ document.addEventListener('DOMContentLoaded', () => {
         USE_FAST_BOOLS: true
     });
 
+    // Inicializa xeokit após um delay
     setTimeout(() => {
         console.log("🔄 Iniciando inicialização do xeokit...");
         initializeXeokitViewer();
-    }, 3000);
+    }, 2000);
 
     loadMultipleIfcs(IFC_MODELS_TO_LOAD);
 
@@ -306,6 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Restante do seu código...
     container.ondblclick = async (event) => {
         if (isMeasuring) return;
         const result = await viewer.IFC.selector.pick(true);
@@ -356,6 +391,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// ... (restante das funções auxiliares permanecem iguais)
 
 // ----------------------------------
 // FUNÇÕES AUXILIARES
