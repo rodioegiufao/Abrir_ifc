@@ -7,7 +7,7 @@ let lastProps = null;
 // 🔥 VARIÁVEIS PARA MEDIÇÕES
 let xeokitViewer;
 let distanceMeasurements;
-let distanceMeasurementsControl; // Será inicializado como null e criado sob demanda
+let distanceMeasurementsControl = null; // Será inicializado como null e criado sob demanda
 let isMeasuring = false;
 let xeokitContainer; // Definido para fácil acesso aos estilos e DOM
 
@@ -35,25 +35,52 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // 🔥 FUNÇÃO PARA SINCRONIZAR CÂMERAS
-    const syncCameras = (threeJSCamera, orbitControls, xeokitViewer) => {
-        if (!xeokitViewer || !xeokitViewer.camera) return;
+    // 🔥 FUNÇÃO MELHORADA PARA SINCRONIZAR CÂMERAS
+    function syncCamerasToXeokit() {
+        if (!viewer || !xeokitViewer || !xeokitViewer.camera) return;
+        
+        try {
+            const threeCamera = viewer.context.ifcCamera.activeCamera;
+            const threeControls = viewer.context.ifcCamera.controls;
+            
+            if (!threeCamera || !threeControls) return;
 
-        const threePos = threeJSCamera.position;
-        const threeTarget = orbitControls.target;
+            const threePos = threeCamera.position;
+            const threeTarget = threeControls.target;
 
-        // 1. Sincroniza posição e orientação
-        xeokitViewer.camera.eye = [threePos.x, threePos.y, threePos.z];
-        xeokitViewer.camera.look = [threeTarget.x, threeTarget.y, threeTarget.z];
+            // Sincroniza posição e lookAt
+            xeokitViewer.camera.eye = [threePos.x, threePos.y, threePos.z];
+            xeokitViewer.camera.look = [threeTarget.x, threeTarget.y, threeTarget.z];
+            
+            // Sincroniza FOV
+            xeokitViewer.camera.perspective.fov = threeCamera.fov;
+            
+            // Força o redesenho
+            xeokitViewer.scene.render();
+            
+        } catch (syncError) {
+            console.warn("⚠️ Erro na sincronização de câmera:", syncError);
+        }
+    }
 
-        // 2. Sincroniza o fov (importante para zoom/perspectiva)
-        xeokitViewer.camera.perspective.fov = threeJSCamera.fov;
-
-        // 3. Renderiza o xeokit para aplicar a mudança
-        // Nota: O xeokit por padrão cria seu próprio canvas dentro do container.
-        // Se precisar de renderização manual, use xeokitViewer.scene.render();
-    };
-
+    // 🔥 FUNÇÃO DE DEBUG PARA VERIFICAR O ESTADO DO XEOKIT
+    function debugXeokitState() {
+        console.group("🔍 DEBUG XEOKIT STATE");
+        console.log("📊 xeokitViewer:", !!xeokitViewer);
+        console.log("📊 distanceMeasurements:", !!distanceMeasurements);
+        console.log("📊 distanceMeasurementsControl:", !!distanceMeasurementsControl);
+        console.log("📊 xeokitContainer:", !!xeokitContainer);
+        
+        if (xeokitViewer) {
+            console.log("🎯 Camera:", xeokitViewer.camera ? "OK" : "MISSING");
+            console.log("🎯 Scene:", xeokitViewer.scene ? "OK" : "MISSING");
+        }
+        
+        if (distanceMeasurementsControl) {
+            console.log("🎯 Control State:", distanceMeasurementsControl.getActive ? "HAS GETACTIVE" : "NO GETACTIVE");
+        }
+        console.groupEnd();
+    }
 
     // 🔥 INICIALIZAR XEOKIT VIEWER (VERSÃO CORRIGIDA - CANVAS FIX)
     async function initializeXeokitViewer() {
@@ -168,30 +195,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
             console.log("✅ xeokit viewer inicializado com sucesso.");
 
-            // ✅ INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES
+            // ✅ INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES (VERSÃO CORRIGIDA)
             try {
+                const xeokitSDK = window.xeokitSDK;
+                
+                // ✅ CORREÇÃO: Usa a API correta do xeokit
                 distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
-                    pointSize: 4,
-                    lineWidth: 2,
+                    pointSize: 8,           // Aumentado para melhor visibilidade
+                    lineWidth: 3,           // Aumentado para melhor visibilidade
                     fontColor: "#FFFFFF",
                     labelBackgroundColor: "rgba(0, 0, 0, 0.8)",
-                    lineColor: "#FF0000"
+                    lineColor: "#FF0000",
+                    snapToVertex: true,     // Adicionado para melhor precisão
+                    snapToEdge: true        // Adicionado para melhor precisão
                 });
-                console.log("✅ Plugin de medições inicializado.");
+                
+                console.log("✅ Plugin de medições inicializado:", distanceMeasurements);
             } catch (pluginError) {
                 console.error("❌ Erro no plugin de medições:", pluginError);
                 distanceMeasurements = null;
             }
 
-            // ✅ CONFIGURA SINCRONIZAÇÃO DE CÂMERA
+            // ✅ CONFIGURA SINCRONIZAÇÃO DE CÂMERA (VERSÃO CORRIGIDA)
             if (viewer && viewer.context && viewer.context.ifcCamera) {
                 viewer.context.ifcCamera.controls.addEventListener("change", () => {
-                    syncCameras(
-                        viewer.context.ifcCamera.activeCamera, 
-                        viewer.context.ifcCamera.controls, 
-                        xeokitViewer
-                    );
+                    syncCamerasToXeokit();
                 });
+                
+                // Sincroniza imediatamente após inicialização
+                setTimeout(syncCamerasToXeokit, 1000);
                 console.log("✅ Sincronização de câmera configurada.");
             }
 
@@ -199,7 +231,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("❌ Erro ao inicializar xeokit viewer:", e);
         }
     }
-
 
     // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (VERSÃO CORRIGIDA)
     function toggleMeasurement() {
@@ -224,9 +255,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const xeokitSDK = window.xeokitSDK;
             if (xeokitSDK && xeokitSDK.DistanceMeasurementsControl) {
                 try {
-                    // ✅ CORREÇÃO CRÍTICA: Passa o plugin correto
-                    distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements, {
-                        // Configurações opcionais
+                    // ✅ CORREÇÃO CRÍTICA: Passa o plugin correto e o viewer
+                    distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(xeokitViewer, {
+                        distanceMeasurementsPlugin: distanceMeasurements,
                         pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
                             active: true,
                             zoomFactor: 2
@@ -257,6 +288,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // ✅ CORREÇÃO: Usa activate() corretamente
                 distanceMeasurementsControl.activate();
                 console.log("▶️ Modo de Medição ATIVADO.");
+                
+                // Debug do estado
+                debugXeokitState();
             } catch (activateError) {
                 console.error("❌ Erro ao ativar medições:", activateError);
                 isMeasuring = false;
@@ -416,94 +450,93 @@ document.addEventListener('DOMContentLoaded', () => {
 // ----------------------------------
 
 // 🔥 Carrega múltiplos arquivos IFC de URLs (VERSÃO CORRIGIDA)
-    async function loadMultipleIfcs(urls) {
-        console.log(`🔄 Iniciando carregamento de ${urls.length} modelo(s)...`);
-        
-        // Limpa a lista antes de carregar novos modelos
-        loadedModels.clear();
+async function loadMultipleIfcs(urls) {
+    console.log(`🔄 Iniciando carregamento de ${urls.length} modelo(s)...`);
+    
+    // Limpa a lista antes de carregar novos modelos
+    loadedModels.clear();
 
-        const loadPromises = urls.map(async (url, index) => {
-            console.log(`📦 Tentando carregar: ${url}`);
-            try {
-                // Usar 'loadIfcUrl' para carregar strings de URL de assets estáticos.
-                const model = await viewer.IFC.loadIfcUrl(url, false); // false para NÃO limpar modelos existentes
-                
-                if (model && model.modelID !== undefined) {
-                    loadedModels.set(model.modelID, {
-                        visible: true,
-                        name: url.split('/').pop(), // Usa o nome do arquivo como nome
-                        url: url
-                    });
-                    console.log(`✅ Sucesso no carregamento: ${url} (ID: ${model.modelID})`);
-                    return model.modelID;
-                }
-                return null;
-
-            } catch (e) {
-                console.error(`❌ Erro ao carregar ${url}:`, e);
-                return null;
+    const loadPromises = urls.map(async (url, index) => {
+        console.log(`📦 Tentando carregar: ${url}`);
+        try {
+            // Usar 'loadIfcUrl' para carregar strings de URL de assets estáticos.
+            const model = await viewer.IFC.loadIfcUrl(url, false); // false para NÃO limpar modelos existentes
+            
+            if (model && model.modelID !== undefined) {
+                loadedModels.set(model.modelID, {
+                    visible: true,
+                    name: url.split('/').pop(), // Usa o nome do arquivo como nome
+                    url: url
+                });
+                console.log(`✅ Sucesso no carregamento: ${url} (ID: ${model.modelID})`);
+                return model.modelID;
             }
-        });
+            return null;
 
-        const loadedIDs = (await Promise.all(loadPromises)).filter(id => id !== null);
-
-        if (loadedIDs.length > 0) {
-            console.log(`🎉 ${loadedIDs.length}/${urls.length} modelo(s) carregados!`);
-            
-            // ✅ CORREÇÃO: Aguarda um pouco para garantir que o IFC Manager esteja pronto
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // ✅ CORREÇÃO MELHOR: Usa a API correta do web-ifc-viewer para construir estrutura espacial
-            try {
-                // Método 1: Tenta usar a API pública do viewer
-                if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.getSpatialStructure === 'function') {
-                    console.log("🔄 Construindo estrutura espacial via getSpatialStructure...");
-                    for (const modelID of loadedIDs) {
-                        await viewer.IFC.loader.ifcManager.getSpatialStructure(modelID);
-                    }
-                    console.log("✅ Estrutura espacial construída via getSpatialStructure.");
-                }
-                // Método 2: Tenta método alternativo
-                else if (viewer.IFC && viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
-                    console.log("🔄 Construindo estrutura espacial via spatialStructure.build...");
-                    const structurePromises = loadedIDs.map(id => 
-                        viewer.IFC.loader.ifcManager.get.spatialStructure.build(id)
-                    );
-                    await Promise.all(structurePromises);
-                    console.log("✅ Estrutura espacial construída via spatialStructure.build.");
-                }
-                // Método 3: Tenta método mais recente
-                else if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.createSubset === 'function') {
-                    console.log("🔄 Estrutura espacial será construída automaticamente pelo viewer...");
-                    // O viewer moderno constrói automaticamente
-                }
-                else {
-                    console.warn("⚠️ API de estrutura espacial não encontrada. Tentando método direto...");
-                    // Método de fallback: tenta acessar diretamente
-                    for (const modelID of loadedIDs) {
-                        try {
-                            await viewer.IFC.getSpatialStructure(modelID);
-                        } catch (e) {
-                            console.warn(`⚠️ Não foi possível construir estrutura para modelo ${modelID}:`, e.message);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.warn("⚠️ Estrutura espacial não pôde ser construída:", error.message);
-                console.log("💡 O visualizador funcionará, mas algumas funcionalidades podem estar limitadas.");
-            }
-
-            // Ajusta a câmera para enquadrar todos os modelos
-            viewer.context.fitToFrame(loadedIDs); 
-            
-            // Atualiza os controles de visibilidade
-            updateVisibilityControls();
-
-        } else {
-            console.warn("⚠️ Nenhum modelo IFC foi carregado com sucesso.");
+        } catch (e) {
+            console.error(`❌ Erro ao carregar ${url}:`, e);
+            return null;
         }
-    }
+    });
 
+    const loadedIDs = (await Promise.all(loadPromises)).filter(id => id !== null);
+
+    if (loadedIDs.length > 0) {
+        console.log(`🎉 ${loadedIDs.length}/${urls.length} modelo(s) carregados!`);
+        
+        // ✅ CORREÇÃO: Aguarda um pouco para garantir que o IFC Manager esteja pronto
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // ✅ CORREÇÃO MELHOR: Usa a API correta do web-ifc-viewer para construir estrutura espacial
+        try {
+            // Método 1: Tenta usar a API pública do viewer
+            if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.getSpatialStructure === 'function') {
+                console.log("🔄 Construindo estrutura espacial via getSpatialStructure...");
+                for (const modelID of loadedIDs) {
+                    await viewer.IFC.loader.ifcManager.getSpatialStructure(modelID);
+                }
+                console.log("✅ Estrutura espacial construída via getSpatialStructure.");
+            }
+            // Método 2: Tenta método alternativo
+            else if (viewer.IFC && viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
+                console.log("🔄 Construindo estrutura espacial via spatialStructure.build...");
+                const structurePromises = loadedIDs.map(id => 
+                    viewer.IFC.loader.ifcManager.get.spatialStructure.build(id)
+                );
+                await Promise.all(structurePromises);
+                console.log("✅ Estrutura espacial construída via spatialStructure.build.");
+            }
+            // Método 3: Tenta método mais recente
+            else if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.createSubset === 'function') {
+                console.log("🔄 Estrutura espacial será construída automaticamente pelo viewer...");
+                // O viewer moderno constrói automaticamente
+            }
+            else {
+                console.warn("⚠️ API de estrutura espacial não encontrada. Tentando método direto...");
+                // Método de fallback: tenta acessar diretamente
+                for (const modelID of loadedIDs) {
+                    try {
+                        await viewer.IFC.getSpatialStructure(modelID);
+                    } catch (e) {
+                        console.warn(`⚠️ Não foi possível construir estrutura para modelo ${modelID}:`, e.message);
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn("⚠️ Estrutura espacial não pôde ser construída:", error.message);
+            console.log("💡 O visualizador funcionará, mas algumas funcionalidades podem estar limitadas.");
+        }
+
+        // Ajusta a câmera para enquadrar todos os modelos
+        viewer.context.fitToFrame(loadedIDs); 
+        
+        // Atualiza os controles de visibilidade
+        updateVisibilityControls();
+
+    } else {
+        console.warn("⚠️ Nenhum modelo IFC foi carregado com sucesso.");
+    }
+}
 
 // 🔥 Mostra as propriedades de um elemento
 function showProperties(props, id) {
