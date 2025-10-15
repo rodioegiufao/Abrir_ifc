@@ -225,13 +225,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isMeasuring) {
             button.textContent = 'Parar Medição';
             button.classList.add('active');
+
+            // ✅ Ativa renderização e eventos do xeokit
             xeokitViewer.scene.active = true;
             xeokitViewer.scene.input.enabled = true;
             xeokitContainer.style.pointerEvents = 'auto';
-            xeokitViewer.start();
 
             if (distanceMeasurementsControl.activate)
                 distanceMeasurementsControl.activate();
+
             if (pointerLens) {
                 pointerLens.active = true;
                 pointerLens.visible = true;
@@ -242,20 +244,23 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             button.textContent = 'Iniciar Medição';
             button.classList.remove('active');
+
             if (pointerLens) {
                 pointerLens.active = false;
                 pointerLens.visible = false;
             }
             if (distanceMeasurementsControl.deactivate)
                 distanceMeasurementsControl.deactivate();
+
             xeokitContainer.style.pointerEvents = 'none';
             xeokitViewer.scene.active = false;
             xeokitViewer.scene.input.enabled = false;
-            xeokitViewer.stop();
             removeMeasurementEvents();
+
             console.log("✅ Modo de medição DESATIVADO");
         }
     }
+
 
     // 🔥 EVENTOS DE MEDIÇÃO
     function setupMeasurementEvents() {
