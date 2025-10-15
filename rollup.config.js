@@ -1,10 +1,18 @@
+// rollup.config.js
 import resolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
 
 export default {
   input: 'index.js',
   output: {
-    file: "dist/bundle.js", // Mude o destino do bundle para 'dist/'
-    format: 'esm'
+    file: "bundle.js",
+    format: 'esm',
+    inlineDynamicImports: true  // ✅ Esta linha resolve o problema
   },
-  plugins: [resolve()]
+  plugins: [
+    resolve({
+      browser: true
+    }),
+    commonjs()
+  ]
 };

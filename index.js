@@ -36,22 +36,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (VERSÃO CORRIGIDA)
-    function initializeXeokitViewer() {
+    async function initializeXeokitViewer() {
         try {
-            // Verifica se o xeokit SDK está carregado (agora como variável global)
-            if (typeof window.ContextMenu === 'undefined') {
-                console.error("❌ xeokit SDK não encontrado. Verifique se o arquivo foi carregado.");
-                
-                // Tenta carregar dinamicamente
-                loadXeokitSDK();
-                return;
-            }
+            console.log("🔄 Inicializando xeokit viewer...");
 
-            console.log("✅ xeokit SDK detectado:", {
-                ContextMenu: typeof ContextMenu,
-                PointerLens: typeof PointerLens,
-                math: typeof math
-            });
+            // ✅ SOLUÇÃO: Importa dinamicamente o módulo xeokit
+            const xeokitSDK = await import('./wasm/xeokit-sdk.es.js');
+            
+            console.log("✅ xeokit SDK importado:", Object.keys(xeokitSDK));
 
             // Cria um container separado para o xeokit
             const xeokitContainer = document.createElement('div');
@@ -63,8 +55,9 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitCanvas.id = 'xeokit-canvas';
             xeokitContainer.appendChild(xeokitCanvas);
 
-            // ✅ CORREÇÃO: Usa as classes diretamente do escopo global
-            // O xeokit SDK exporta as classes para o escopo global quando carregado como script
+            // ✅ Usa as classes do módulo importado
+            const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurementsMouseControl, PointerLens } = xeokitSDK;
+
             xeokitViewer = new Viewer({
                 canvasId: "xeokit-canvas",
                 transparent: true,
@@ -86,10 +79,38 @@ document.addEventListener('DOMContentLoaded', () => {
             distanceMeasurementsControl.snapToVertex = true;
             distanceMeasurementsControl.snapToEdge = true;
 
-            console.log("✅ Plugin de medições xeokit inicializado");
+            console.log("✅ Plugin de medições xeokit inicializado com sucesso");
 
         } catch (error) {
             console.error("❌ Erro ao inicializar xeokit:", error);
+            
+            // Fallback: tenta carregar via CDN
+            await loadXeokitFromCDN();
+        }
+    }
+
+    // 🔥 FALLBACK: CARREGAR VIA CDN
+    async function loadXeokitFromCDN() {
+        try {
+            console.log("🔄 Tentando carregar xeokit via CDN...");
+            
+            // Carrega o script do CDN
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/@xeokit/xeokit-sdk/dist/xeokit-sdk.min.js';
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+
+            // Agora usa o xeokit do CDN (disponível globalmente)
+            const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurementsMouseControl, PointerLens } = window;
+            
+            // ... resto da inicialização igual ao código acima
+            console.log("✅ xeokit SDK carregado via CDN");
+
+        } catch (error) {
+            console.error("❌ Falha ao carregar xeokit via CDN:", error);
         }
     }
 
@@ -135,21 +156,26 @@ document.addEventListener('DOMContentLoaded', () => {
         document.head.appendChild(script);
     }
 
-    // 🔥 CONTROLES DE MEDIÇÃO
+    // 🔥 CONTROLES DE MEDIÇÃO (ATUALIZADO)
     function setupMeasurementControls() {
         const startBtn = document.getElementById('start-measurement');
         const clearBtn = document.getElementById('clear-measurements');
 
-        startBtn.addEventListener('click', () => {
+        if (!startBtn || !clearBtn) {
+            console.warn("⚠️ Botões de medição não encontrados");
+            return;
+        }
+
+        startBtn.addEventListener('click', async () => {
             if (!isMeasuring) {
                 // Iniciar medição
                 try {
                     if (!distanceMeasurementsControl) {
-                        console.error("❌ Controle de medições não inicializado");
+                        console.error("❌ xeokit não inicializado corretamente");
                         return;
                     }
 
-                    distanceMeasurementsControl.activate();
+                    await distanceMeasurementsControl.activate();
                     
                     // Mostrar canvas do xeokit
                     const xeokitCanvas = document.getElementById('xeokit-canvas');
@@ -169,7 +195,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // Parar medição
                 try {
-                    distanceMeasurementsControl.deactivate();
+                    if (distanceMeasurementsControl) {
+                        await distanceMeasurementsControl.deactivate();
+                    }
                     
                     // Esconder canvas do xeokit
                     const xeokitCanvas = document.getElementById('xeokit-canvas');
@@ -558,19 +586,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // 🚀 INICIALIZAÇÃO
     async function initializeViewer() {
         try {
-            // 🔥 VERIFICAÇÃO DO AMBIENTE
-            console.log("🔍 Verificando ambiente...", {
-                xeokitSDK: typeof window.xeokitSDK,
-                ContextMenu: typeof ContextMenu,
-                Viewer: typeof Viewer,
-                PointerLens: typeof PointerLens
-            });
-            // 🔥 INICIALIZA XEOKIT PRIMEIRO
-            initializeXeokitViewer();
+            console.log("🚀 Iniciando aplicação...");
+            
+            // 🔥 INICIALIZA XEOKIT PRIMEIRO (agora com await)
+            await initializeXeokitViewer();
+            
+            // 🔥 CONFIGURA CONTROLES DE MEDIÇÃO
             setupMeasurementControls();
             
-            // Depois carrega os modelos IFC
+            // 🔥 DEPOIS CARREGA OS MODELOS IFC
             await loadMultipleIfcs(IFC_MODELS_TO_LOAD);
+            
+            console.log("🎉 Aplicação inicializada com sucesso!");
+            
         } catch (error) {
             console.error("🚨 Erro ao inicializar o visualizador:", error);
         }

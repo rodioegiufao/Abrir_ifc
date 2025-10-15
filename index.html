@@ -324,8 +324,15 @@
         <div id="element-details"></div>
     </div>
 
-    <!-- 🔥 SCRIPT DO XEOKIT -->
-    <script type="module" src="./wasm/xeokit-sdk.es.js"></script>
+    <!-- ✅ CARREGA COMO MÓDULO ES6 -->
+    <script type="module">
+    // Importa o xeokit e torna disponível globalmente
+    import * as xeokitSDK from './wasm/xeokit-sdk.es.js';
+    window.xeokitSDK = xeokitSDK;
+    console.log("✅ xeokit SDK carregado e disponível globalmente");
+    </script>
+
+    <!-- SEU SCRIPT PRINCIPAL -->
     <script type="module" src="./bundle.js"></script>
 
     <div id="file-input-container">
