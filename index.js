@@ -38,6 +38,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 🔥 FUNÇÃO PARA SINCRONIZAR CÂMERAS
     const syncCameras = (threeJSCamera, orbitControls, xeokitViewer) => {
+        if (!xeokitViewer || !xeokitViewer.camera) return;
+
         const threePos = threeJSCamera.position;
         const threeTarget = orbitControls.target;
 
@@ -74,8 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.left = '0';
             xeokitContainer.style.width = '100%';
             xeokitContainer.style.height = '100%';
-            // 🔥 CRUCIAL: Inicialmente, permite que eventos passem para o viewer IFC
-            xeokitContainer.style.pointerEvents = 'none'; 
+            xeokitContainer.style.pointerEvents = 'none'; // Inicialmente, permite que eventos passem
+            
+            // 🔥 CORREÇÃO 1: Anexa o contêiner ao DOM antes de inicializar o Viewer
             document.getElementById('viewer-container').appendChild(xeokitContainer);
 
             // 2. Inicializa o xeokit Viewer
@@ -100,9 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fontFamily: "sans-serif",
                 fontSize: "14px",
                 scale: [1, 1, 1],
-                // Cor do label do texto
                 labelColor: "black",
-                // Cor do background do label do texto
                 labelBackgroundColor: "rgba(255, 255, 255, 0.7)" 
             });
 
@@ -112,9 +113,13 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("✅ Plugin de medições xeokit inicializado com sucesso");
             
         } catch (error) {
-            console.error("❌ Erro ao inicializar xeokit viewer:", error);
-            document.getElementById('start-measurement').disabled = true;
-            document.getElementById('start-measurement').textContent = 'Erro de Medição';
+            // Se o Xeokit falhar, desativa o botão de medição
+            console.error("❌ Erro ao inicializar xeokit viewer:", error.message || error);
+            const startBtn = document.getElementById('start-measurement');
+            if (startBtn) {
+                startBtn.disabled = true;
+                startBtn.textContent = 'Erro de Medição';
+            }
         }
     }
 
@@ -170,43 +175,45 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------------------------
 
     const loadMultipleIfcs = async (ifcUrls) => {
-        // ... (resto da função loadMultipleIfcs permanece o mesmo)
         if (viewer && ifcUrls && ifcUrls.length > 0) {
             console.log(`🔄 Iniciando carregamento de ${ifcUrls.length} modelo(s)...`);
             
             for (const ifcUrl of ifcUrls) {
                 console.log(`📦 Tentando carregar: ${ifcUrl}`);
                 try {
-                    // Carrega o modelo com cachable: true
                     const model = await viewer.IFC.loadIfcUrl({
                         url: ifcUrl, 
-                        // CRUCIAL: Mantenha 'true' para carregar todas as propriedades na memória
                         wasmsPath: 'wasm/', 
                         caching: true, 
                         autoSetWasm: true 
                     });
                     
-                    if (model.modelID !== undefined) {
+                    // 🔥 CORREÇÃO 2: Verifica se o modelo foi carregado com sucesso
+                    if (model && model.modelID !== undefined) { 
                         loadedModels.set(model.modelID, {
                             visible: true,
                             name: ifcUrl.split('/').pop(),
                             url: ifcUrl
                         });
                         console.log(`✅ Sucesso: ${ifcUrl.split('/').pop()} (ID: ${model.modelID})`);
+                        
                         // Força o cache das propriedades para a seleção ser rápida
-                        await viewer.IFC.loader.ifcManager.get // Força o cache
-                        .spatialStructure.build(model.modelID);
-                        console.log(`✅ Cache populado lendo IfcProject (ID ${model.modelID}) para o modelo: ${ifcUrl.split('/').pop()}`);
+                        await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
+                        console.log(`✅ Cache populado para o modelo: ${ifcUrl.split('/').pop()}`);
+                    } else {
+                        console.warn(`⚠️ Aviso: O carregamento de ${ifcUrl} falhou, ignorando o modelo.`);
                     }
                 } catch (error) {
-                    console.error(`❌ Erro ao carregar o modelo ${ifcUrl}:`, error);
+                    console.error(`❌ Erro ao carregar o modelo ${ifcUrl}:`, error.message || error);
                 }
             }
             console.log(`🎉 ${loadedModels.size}/${ifcUrls.length} modelo(s) carregados!`);
             updateVisibilityControls();
             
-            // Foca a câmera em todos os modelos carregados
-            viewer.context.fitToFrame(loadedModels.keys()); 
+            // Foca a câmera em todos os modelos carregados, se houver algum
+            if (loadedModels.size > 0) {
+                viewer.context.fitToFrame(loadedModels.keys()); 
+            }
         }
     };
 
@@ -238,7 +245,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function toggleModelVisibility(modelID, visible) {
-        // ... (resto da função toggleModelVisibility permanece o mesmo)
         const modelData = loadedModels.get(modelID);
         if (!modelData) return;
 
@@ -279,7 +285,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Verifica se é uma lista de Psets ou um único Pset
                     if (Array.isArray(value)) {
                         td.textContent = `[${value.length} Itens]`;
-                        // Se for uma lista de Psets, cria uma sub-lista de detalhes (opcional: pode ser muito longo)
                         
                         value.forEach(item => {
                             if (item.Name) {
@@ -287,7 +292,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const summary = document.createElement('summary');
                                 summary.textContent = item.Name;
                                 subSection.appendChild(summary);
-                                createPropertyTable(item.properties, subSection);
+                                // Verifica se item.properties existe antes de chamar recursivamente
+                                if (item.properties) {
+                                    createPropertyTable(item.properties, subSection);
+                                }
                                 container.appendChild(subSection);
                             }
                         });
@@ -303,7 +311,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         const summary = document.createElement('summary');
                         summary.textContent = value.Name || 'Detalhes';
                         subSection.appendChild(summary);
-                        createPropertyTable(value, subSection);
+                         if (value.properties) {
+                            createPropertyTable(value.properties, subSection);
+                        } else {
+                             createPropertyTable(value, subSection);
+                        }
                         container.appendChild(subSection);
                         
                         tr.remove(); // Remove a linha principal
