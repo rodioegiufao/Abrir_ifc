@@ -10,6 +10,7 @@ let xeokitViewer;
 let distanceMeasurements;
 let distanceMeasurementsControl;
 let isMeasuring = false;
+let xeokitContainer; // Definido globalmente para fácil acesso aos estilos
 
 // ✅ LISTA DE ARQUIVOS IFC 
 const IFC_MODELS_TO_LOAD = [
@@ -35,7 +36,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (VERSÃO CORRIGIDA)
+    // 🔥 FUNÇÃO PARA SINCRONIZAR CÂMERAS
+    const syncCameras = (threeJSCamera, orbitControls, xeokitViewer) => {
+        const threePos = threeJSCamera.position;
+        const threeTarget = orbitControls.target;
+
+        // 1. Sincroniza posição e orientação
+        xeokitViewer.camera.eye = [threePos.x, threePos.y, threePos.z];
+        xeokitViewer.camera.look = [threeTarget.x, threeTarget.y, threeTarget.z];
+        xeokitViewer.camera.up = [threeJSCamera.up.x, threeJSCamera.up.y, threeJSCamera.up.z];
+        
+        // 2. Sincroniza parâmetros de projeção
+        xeokitViewer.camera.projection = "perspective";
+        xeokitViewer.camera.near = threeJSCamera.near;
+        xeokitViewer.camera.far = threeJSCamera.far;
+        xeokitViewer.camera.fovy = threeJSCamera.fov;
+
+        // 3. Garante que o xeokit redesenhe
+        xeokitViewer.scene.redraw();
+    };
+
+    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (COM SINCRONIZAÇÃO)
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
@@ -43,584 +64,297 @@ document.addEventListener('DOMContentLoaded', () => {
             // ✅ SOLUÇÃO: Importa dinamicamente o módulo xeokit
             const xeokitSDK = await import('./wasm/xeokit-sdk.es.js');
             
-            console.log("✅ xeokit SDK importado:", Object.keys(xeokitSDK));
+            console.log("✅ xeokit SDK importado:", Object.keys(xeokitSDK).slice(0, 10).concat('...'));
 
-            // Cria um container separado para o xeokit
-            const xeokitContainer = document.createElement('div');
+            // 1. Cria um contêiner para o xeokit DENTRO do viewer-container
+            xeokitContainer = document.createElement('div');
             xeokitContainer.id = 'xeokit-container';
-            container.appendChild(xeokitContainer);
+            xeokitContainer.style.position = 'absolute';
+            xeokitContainer.style.top = '0';
+            xeokitContainer.style.left = '0';
+            xeokitContainer.style.width = '100%';
+            xeokitContainer.style.height = '100%';
+            // 🔥 CRUCIAL: Inicialmente, permite que eventos passem para o viewer IFC
+            xeokitContainer.style.pointerEvents = 'none'; 
+            document.getElementById('viewer-container').appendChild(xeokitContainer);
 
-            // Cria canvas para o xeokit
-            const xeokitCanvas = document.createElement('canvas');
-            xeokitCanvas.id = 'xeokit-canvas';
-            xeokitContainer.appendChild(xeokitCanvas);
-
-            // ✅ Usa as classes do módulo importado
-            const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurementsMouseControl, PointerLens } = xeokitSDK;
-
-            xeokitViewer = new Viewer({
-                canvasId: "xeokit-canvas",
-                transparent: true,
-                alpha: true
+            // 2. Inicializa o xeokit Viewer
+            xeokitViewer = new xeokitSDK.Viewer({
+                canvasId: xeokitContainer.id,
+                transparent: true, // Garante que o viewer IFC seja visto
+                sRGBOutput: true
             });
 
-            // Configura os plugins de medição
-            distanceMeasurements = new DistanceMeasurementsPlugin(xeokitViewer, {
-                color: "#FF0000",
-                fontFamily: "Arial",
-                fontSize: 12
+            // 3. Configura a sincronização da câmera do Three.js para o Xeokit
+            const threeJSCamera = viewer.context.camera;
+            const orbitControls = viewer.context.controls;
+
+            // CRUCIAL: Sincroniza a câmera sempre que o controle (rotação, pan, zoom) for alterado.
+            orbitControls.addEventListener('change', () => syncCameras(threeJSCamera, orbitControls, xeokitViewer));
+            
+            // Sincroniza a câmera na inicialização
+            syncCameras(threeJSCamera, orbitControls, xeokitViewer);
+
+            // 4. Inicializa o plugin de medições
+            distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
+                fontFamily: "sans-serif",
+                fontSize: "14px",
+                scale: [1, 1, 1],
+                // Cor do label do texto
+                labelColor: "black",
+                // Cor do background do label do texto
+                labelBackgroundColor: "rgba(255, 255, 255, 0.7)" 
             });
 
-            distanceMeasurementsControl = new DistanceMeasurementsMouseControl(distanceMeasurements, {
-                pointerLens: new PointerLens(xeokitViewer)
-            });
-
-            // Configura snapping para melhor precisão
-            distanceMeasurementsControl.snapToVertex = true;
-            distanceMeasurementsControl.snapToEdge = true;
+            // 5. Adiciona o controle de mouse para medições de distância
+            distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements);
 
             console.log("✅ Plugin de medições xeokit inicializado com sucesso");
-
-        } catch (error) {
-            console.error("❌ Erro ao inicializar xeokit:", error);
             
-            // Fallback: tenta carregar via CDN
-            await loadXeokitFromCDN();
+        } catch (error) {
+            console.error("❌ Erro ao inicializar xeokit viewer:", error);
+            document.getElementById('start-measurement').disabled = true;
+            document.getElementById('start-measurement').textContent = 'Erro de Medição';
         }
     }
 
-    // 🔥 FALLBACK: CARREGAR VIA CDN
-    async function loadXeokitFromCDN() {
-        try {
-            console.log("🔄 Tentando carregar xeokit via CDN...");
-            
-            // Carrega o script do CDN
-            await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/@xeokit/xeokit-sdk/dist/xeokit-sdk.min.js';
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
-            });
+    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO
+    const toggleMeasurement = () => {
+        if (!distanceMeasurementsControl || !xeokitContainer) return;
 
-            // Agora usa o xeokit do CDN (disponível globalmente)
-            const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurementsMouseControl, PointerLens } = window;
-            
-            // ... resto da inicialização igual ao código acima
-            console.log("✅ xeokit SDK carregado via CDN");
-
-        } catch (error) {
-            console.error("❌ Falha ao carregar xeokit via CDN:", error);
-        }
-    }
-
-    // 🔥 FUNÇÃO PARA CARREGAR O XEOKIT DINAMICAMENTE
-    function loadXeokitSDK() {
-        console.log("🔄 Tentando carregar xeokit SDK dinamicamente...");
-        
-        const script = document.createElement('script');
-        script.src = './wasm/xeokit-sdk.es.js';
-        script.type = 'module';
-        
-        script.onload = function() {
-            console.log("✅ xeokit SDK carregado com sucesso");
-            // Tenta inicializar novamente após o carregamento
-            setTimeout(initializeXeokitViewer, 1000);
-        };
-        
-        script.onerror = function() {
-            console.error("❌ Falha ao carregar xeokit SDK");
-            // Fallback: tenta carregar como script normal (não módulo)
-            loadXeokitAsRegularScript();
-        };
-        
-        document.head.appendChild(script);
-    }
-
-    // 🔥 FALLBACK: CARREGAR COMO SCRIPT REGULAR
-    function loadXeokitAsRegularScript() {
-        console.log("🔄 Tentando carregar xeokit como script regular...");
-        
-        const script = document.createElement('script');
-        script.src = './wasm/xeokit-sdk.es.js';
-        
-        script.onload = function() {
-            console.log("✅ xeokit SDK carregado como script regular");
-            setTimeout(initializeXeokitViewer, 1000);
-        };
-        
-        script.onerror = function() {
-            console.error("❌ Falha completa ao carregar xeokit SDK");
-        };
-        
-        document.head.appendChild(script);
-    }
-
-    // 🔥 CONTROLES DE MEDIÇÃO (ATUALIZADO)
-    function setupMeasurementControls() {
+        isMeasuring = !isMeasuring;
         const startBtn = document.getElementById('start-measurement');
-        const clearBtn = document.getElementById('clear-measurements');
+        
+        if (isMeasuring) {
+            startBtn.textContent = 'Parar Medição';
+            startBtn.classList.add('active');
+            
+            // 1. Desativa os controles padrão do three.js para que o xeokit possa capturar os cliques
+            viewer.context.controls.enabled = false;
+            
+            // 2. Permite que o xeokit capture os eventos do mouse/toque
+            xeokitContainer.style.pointerEvents = 'auto'; 
 
-        if (!startBtn || !clearBtn) {
-            console.warn("⚠️ Botões de medição não encontrados");
-            return;
+            // 3. Ativa o controle de medição do xeokit
+            distanceMeasurementsControl.setActive(true);
+            console.log("📏 Modo medição ativado");
+        } else {
+            startBtn.textContent = 'Iniciar Medição';
+            startBtn.classList.remove('active');
+            
+            // 1. Reativa os controles padrão do three.js
+            viewer.context.controls.enabled = true;
+            
+            // 2. Permite que o Three.js/IFC Viewer capture os eventos novamente
+            xeokitContainer.style.pointerEvents = 'none'; 
+
+            // 3. Desativa o controle de medição do xeokit
+            distanceMeasurementsControl.setActive(false);
+            console.log("🚫 Modo medição desativado");
         }
+        
+        // Garante que o xeokit redesenhe após a mudança de estado
+        if (xeokitViewer) xeokitViewer.scene.redraw();
+    };
 
-        startBtn.addEventListener('click', async () => {
-            if (!isMeasuring) {
-                // Iniciar medição
+    // 🔥 FUNÇÃO PARA LIMPAR AS MEDIÇÕES
+    const clearMeasurements = () => {
+        if (distanceMeasurements) {
+            distanceMeasurements.clear();
+            if (xeokitViewer) xeokitViewer.scene.redraw();
+        }
+    };
+
+    // -----------------------------------------------------------
+    // FUNÇÕES DE SUPORTE
+    // -----------------------------------------------------------
+
+    const loadMultipleIfcs = async (ifcUrls) => {
+        // ... (resto da função loadMultipleIfcs permanece o mesmo)
+        if (viewer && ifcUrls && ifcUrls.length > 0) {
+            console.log(`🔄 Iniciando carregamento de ${ifcUrls.length} modelo(s)...`);
+            
+            for (const ifcUrl of ifcUrls) {
+                console.log(`📦 Tentando carregar: ${ifcUrl}`);
                 try {
-                    if (!distanceMeasurementsControl) {
-                        console.error("❌ xeokit não inicializado corretamente");
-                        return;
+                    // Carrega o modelo com cachable: true
+                    const model = await viewer.IFC.loadIfcUrl({
+                        url: ifcUrl, 
+                        // CRUCIAL: Mantenha 'true' para carregar todas as propriedades na memória
+                        wasmsPath: 'wasm/', 
+                        caching: true, 
+                        autoSetWasm: true 
+                    });
+                    
+                    if (model.modelID !== undefined) {
+                        loadedModels.set(model.modelID, {
+                            visible: true,
+                            name: ifcUrl.split('/').pop(),
+                            url: ifcUrl
+                        });
+                        console.log(`✅ Sucesso: ${ifcUrl.split('/').pop()} (ID: ${model.modelID})`);
+                        // Força o cache das propriedades para a seleção ser rápida
+                        await viewer.IFC.loader.ifcManager.get // Força o cache
+                        .spatialStructure.build(model.modelID);
+                        console.log(`✅ Cache populado lendo IfcProject (ID ${model.modelID}) para o modelo: ${ifcUrl.split('/').pop()}`);
                     }
-
-                    await distanceMeasurementsControl.activate();
-                    
-                    // Mostrar canvas do xeokit
-                    const xeokitCanvas = document.getElementById('xeokit-canvas');
-                    if (xeokitCanvas) {
-                        xeokitCanvas.style.display = 'block';
-                        xeokitCanvas.style.pointerEvents = 'auto';
-                    }
-                    
-                    startBtn.textContent = 'Parar Medição';
-                    startBtn.classList.add('active');
-                    isMeasuring = true;
-                    
-                    console.log("📏 Modo medição ativado");
                 } catch (error) {
-                    console.error("❌ Erro ao ativar medições:", error);
-                }
-            } else {
-                // Parar medição
-                try {
-                    if (distanceMeasurementsControl) {
-                        await distanceMeasurementsControl.deactivate();
-                    }
-                    
-                    // Esconder canvas do xeokit
-                    const xeokitCanvas = document.getElementById('xeokit-canvas');
-                    if (xeokitCanvas) {
-                        xeokitCanvas.style.display = 'none';
-                        xeokitCanvas.style.pointerEvents = 'none';
-                    }
-                    
-                    startBtn.textContent = 'Iniciar Medição';
-                    startBtn.classList.remove('active');
-                    isMeasuring = false;
-                    
-                    console.log("📏 Modo medição desativado");
-                } catch (error) {
-                    console.error("❌ Erro ao desativar medições:", error);
+                    console.error(`❌ Erro ao carregar o modelo ${ifcUrl}:`, error);
                 }
             }
-        });
-
-        clearBtn.addEventListener('click', () => {
-            try {
-                if (distanceMeasurements) {
-                    distanceMeasurements.clear();
-                    console.log("🗑️ Todas as medições removidas");
-                }
-            } catch (error) {
-                console.error("❌ Erro ao limpar medições:", error);
-            }
-        });
-    }
-
-    // =======================================================
-    // 🔹 FUNÇÃO CARREGAR MÚLTIPLOS IFCs (COM CORREÇÃO PARA ^1.0.218)
-    // =======================================================
-    async function loadMultipleIfcs(urls) {
-        if (viewer) await viewer.dispose();
-        viewer = CreateViewer(container);
-        await viewer.IFC.setWasmPath("/wasm/"); 
-        
-        currentModelID = -1;
-        loadedModels.clear(); // Limpa modelos anteriores
-        
-        console.log(`🔄 Iniciando carregamento de ${urls.length} modelos...`);
-
-        let loadedCount = 0;
-
-        for (const url of urls) {
-            try {
-                console.log(`📦 Tentando carregar: ${url}`);
-                
-                const model = await viewer.IFC.loadIfcUrl(url);
-                
-                // 💡 CORREÇÃO CRÍTICA AQUI: MÉTODO COMPATÍVEL COM ^1.0.218
-                const ifcProject = await viewer.IFC.getSpatialStructure(model.modelID, false);
-                console.log(`✅ Cache populado lendo IfcProject (ID ${ifcProject.expressID}) para o modelo: ${url}`);
-                
-                viewer.shadowDropper.renderShadow(model.modelID);
-                loadedCount++;
-                
-                // 🔥 ARMAZENA INFORMAÇÕES DO MODELO
-                const modelName = getModelNameFromUrl(url);
-                loadedModels.set(model.modelID, {
-                    visible: true,
-                    name: modelName,
-                    url: url
-                });
-                
-                console.log(`✅ Sucesso: ${modelName} (ID: ${model.modelID})`);
-
-            } catch (error) {
-                console.error(`❌ Falha ao carregar: ${url}`, error.message);
-            }
-        }
-
-        if (loadedCount === 0) {
-            console.error("🚨 Nenhum modelo IFC pôde ser carregado!");
-            showErrorMessage();
-            return;
-        }
-        
-        // Ajuste da câmera
-        const scene = viewer.context.getScene();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        viewer.context.ifcCamera.cameraControls.fitToBox(scene, true, 0.5, true);
-
-        // 🔥 CRIA OS BOTÕES DE CONTROLE
-        createVisibilityControls();
-        
-        console.log(`🎉 ${loadedCount}/${urls.length} modelos carregados!`);
-    }
-
-    // 🔥 EXTRAI NOME DO ARQUIVO DA URL
-    function getModelNameFromUrl(url) {
-        const parts = url.split('/');
-        return parts[parts.length - 1]; // Pega o último parte (nome do arquivo)
-    }
-
-    // 🔥 CRIA BOTÕES DE CONTROLE DE VISIBILIDADE
-    function createVisibilityControls() {
-        // Remove controles anteriores se existirem
-        const existingControls = document.getElementById('visibility-controls');
-        if (existingControls) {
-            existingControls.remove();
-        }
-        
-        const controlsDiv = document.createElement('div');
-        controlsDiv.id = 'visibility-controls';
-        controlsDiv.style.cssText = `
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background: rgba(255, 255, 255, 0.95);
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
-            z-index: 2000;
-            min-width: 200px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            font-family: Arial, sans-serif;
-        `;
-        
-        let controlsHTML = `
-            <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">👁️ Controle de Modelos</h4>
-        `;
-        
-        // Cria um botão para cada modelo carregado
-        loadedModels.forEach((modelInfo, modelID) => {
-            const buttonText = modelInfo.visible ? '👁️ Ocultar' : '🙈 Mostrar';
-            const buttonColor = modelInfo.visible ? '#dc3545' : '#28a745';
+            console.log(`🎉 ${loadedModels.size}/${ifcUrls.length} modelo(s) carregados!`);
+            updateVisibilityControls();
             
-            controlsHTML += `
-                <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 12px; color: #666;">${modelInfo.name}</span>
-                    <button onclick="toggleModelVisibility(${modelID})" 
-                            style="background: ${buttonColor}; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;">
-                        ${buttonText}
-                    </button>
-                </div>
-            `;
-        });
-        
-        // Botão para mostrar/ocultar todos
-        controlsHTML += `
-            <hr style="margin: 10px 0; border: none; border-top: 1px solid #eee;">
-            <div style="display: flex; gap: 5px;">
-                <button onclick="showAllModels()" 
-                        style="flex: 1; background: #28a745; color: white; border: none; padding: 6px; border-radius: 3px; cursor: pointer; font-size: 11px;">
-                    👁️ Todos
-                </button>
-                <button onclick="hideAllModels()" 
-                        style="flex: 1; background: #dc3545; color: white; border: none; padding: 6px; border-radius: 3px; cursor: pointer; font-size: 11px;">
-                    🙈 Nenhum
-                </button>
-            </div>
-        `;
-        
-        controlsDiv.innerHTML = controlsHTML;
-        document.body.appendChild(controlsDiv);
-    }
+            // Foca a câmera em todos os modelos carregados
+            viewer.context.fitToFrame(loadedModels.keys()); 
+        }
+    };
 
-    // 🔥 ALTERNA VISIBILIDADE DE UM MODELO ESPECÍFICO
-    function toggleModelVisibility(modelID) {
-        const modelInfo = loadedModels.get(modelID);
-        if (!modelInfo) return;
-        
-        modelInfo.visible = !modelInfo.visible;
-        
-        // Encontra e altera a visibilidade do modelo
-        viewer.context.items.ifcModels.forEach(model => {
-            if (model.modelID === modelID) {
-                model.visible = modelInfo.visible;
-            }
-        });
-        
-        // Atualiza os controles
-        createVisibilityControls();
-        
-        console.log(`🔸 ${modelInfo.visible ? 'Mostrando' : 'Ocultando'} ${modelInfo.name}`);
-    }
 
-    // 🔥 MOSTRA TODOS OS MODELOS
-    function showAllModels() {
-        loadedModels.forEach((modelInfo, modelID) => {
-            modelInfo.visible = true;
+    function updateVisibilityControls() {
+        // ... (resto da função updateVisibilityControls permanece o mesmo)
+        const controlsDiv = document.getElementById('visibility-controls');
+        controlsDiv.style.display = 'block';
+        controlsDiv.innerHTML = '<h4>👁️ Visibilidade dos Modelos</h4>';
+
+        loadedModels.forEach((model, modelID) => {
+            const container = document.createElement('div');
+            container.className = 'model-control-item';
             
-            viewer.context.items.ifcModels.forEach(model => {
-                if (model.modelID === modelID) {
-                    model.visible = true;
-                }
-            });
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `model-toggle-${modelID}`;
+            checkbox.checked = model.visible;
+            checkbox.onchange = () => toggleModelVisibility(modelID, checkbox.checked);
+
+            const label = document.createElement('label');
+            label.htmlFor = `model-toggle-${modelID}`;
+            label.textContent = model.name;
+
+            container.appendChild(checkbox);
+            container.appendChild(label);
+            controlsDiv.appendChild(container);
         });
-        
-        createVisibilityControls();
-        console.log('🔸 Mostrando todos os modelos');
     }
 
-    // 🔥 OCULTA TODOS OS MODELOS
-    function hideAllModels() {
-        loadedModels.forEach((modelInfo, modelID) => {
-            modelInfo.visible = false;
-            
-            viewer.context.items.ifcModels.forEach(model => {
-                if (model.modelID === modelID) {
-                    model.visible = false;
-                }
-            });
-        });
-        
-        createVisibilityControls();
-        console.log('🔸 Ocultando todos os modelos');
+    function toggleModelVisibility(modelID, visible) {
+        // ... (resto da função toggleModelVisibility permanece o mesmo)
+        const modelData = loadedModels.get(modelID);
+        if (!modelData) return;
+
+        modelData.visible = visible;
+        loadedModels.set(modelID, modelData);
+
+        viewer.IFC.loader.ifcManager.setVisibility(modelID, visible);
+
+        // O xeokit não precisa de sincronização de visibilidade, pois desenha apenas as medições.
     }
 
-    // 🔥 EXPORTA FUNÇÕES PARA O ESCOPO GLOBAL
-    window.toggleModelVisibility = toggleModelVisibility;
-    window.showAllModels = showAllModels;
-    window.hideAllModels = hideAllModels;
-
-    // 🔹 MENSAGEM DE ERRO
-    function showErrorMessage() {
-        const errorDiv = document.createElement('div');
-        errorDiv.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            border-radius: 8px;
-            padding: 20px;
-            max-width: 400px;
-            text-align: center;
-            z-index: 10000;
-        `;
-        
-        errorDiv.innerHTML = `
-            <h3 style="color: #721c24; margin-top: 0;">⚠️ Arquivos IFC Não Encontrados</h3>
-            <p style="color: #721c24;">
-                Verifique se os arquivos estão na pasta 'models/'
-            </p>
-            <button onclick="this.parentElement.remove()" 
-                    style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px;">
-                Fechar
-            </button>
-        `;
-        
-        document.body.appendChild(errorDiv);
-    }
-
-    // =======================================================
-    // 🔹 FUNÇÃO showProperties (OTIMIZADA)
-    // =======================================================
-    function showProperties(props, expressID) {
+    function showProperties(props, id) {
+        // ... (resto da função showProperties permanece o mesmo)
         const panel = document.getElementById('properties-panel');
-        const title = document.getElementById('element-title');
         const details = document.getElementById('element-details');
         
-        if (!panel || !details) return;
+        document.getElementById('element-title').textContent = `ID ${id}: ${props.type || 'Elemento'}`;
+        details.innerHTML = ''; 
 
-        const elementType = props.constructor.name;
-        const elementName = props.Name?.value || elementType;
-
-        title.textContent = elementName;
-        
-        let htmlContent = '';
-
-        // 🔥 DEBUG: EXPLORA A ESTRUTURA COMPLETA
-        console.log('🔍 ESTRUTURA COMPLETA DO ELEMENTO:', props);
-        console.log('📋 TODAS AS CHAVES DISPONÍVEIS:', Object.keys(props));
-
-        htmlContent += `
-            <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-                <h4 style="margin: 0 0 8px 0; color: #007bff;">Informações Gerais</h4>
-                <p style="margin: 4px 0;"><strong>Tipo IFC:</strong> ${elementType}</p>
-                <p style="margin: 4px 0;"><strong>Nome:</strong> ${elementName}</p>
-                <p style="margin: 4px 0;"><strong>ID IFC:</strong> ${expressID}</p>
-                <p style="margin: 4px 0;"><strong>Global ID:</strong> ${props.GlobalId?.value || 'N/A'}</p>
-            </div>
-        `;
-
-        if (props.psets && props.psets.length > 0) {
-            htmlContent += `<h4 style="color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 5px;">Conjuntos de Propriedades (${props.psets.length} Psets)</h4>`;
+        // Função recursiva para exibir subpropriedades (Psets, etc)
+        const createPropertyTable = (properties, container) => {
+            const table = document.createElement('table');
+            table.className = 'props-table';
             
-            props.psets.forEach((pset, index) => {
-                const psetName = pset.Name?.value || `Pset ${index + 1}`;
+            for (const key in properties) {
+                if (key === 'expressID' || key === 'type') continue; // Ignora chaves internas
                 
-                console.log(`🔍 PSET ${index}: ${psetName}`, pset);
+                const value = properties[key];
+                const tr = document.createElement('tr');
                 
-                htmlContent += `
-                    <div style="background: white; border: 1px solid #ddd; border-radius: 5px; padding: 12px; margin-bottom: 15px;">
-                        <h5 style="margin: 0 0 8px 0; color: #495057; font-size: 1.1em;">${psetName}</h5>
-                `;
-
-                let propertiesFound = false;
-                let propertiesHTML = '<ul style="list-style: none; padding-left: 0; margin: 0;">';
-
-                // 🔥 BUSCA PROPRIEDADES NO OBJETO PRINCIPAL (props) ATRAVÉS DO HANDLE
-                if (pset.HasProperties && pset.HasProperties.length > 0) {
-                    console.log(`📋 ${psetName} - HasProperties: (${pset.HasProperties.length}) [Handles]`);
-                    
-                    pset.HasProperties.forEach((propHandle, propIndex) => {
-                        const propExpressID = propHandle.value;
-                        const prop = props[propExpressID]; // Acesso no cache populado
+                const th = document.createElement('th');
+                th.textContent = key;
+                tr.appendChild(th);
+                
+                const td = document.createElement('td');
+                
+                if (typeof value === 'object' && value !== null) {
+                    // Verifica se é uma lista de Psets ou um único Pset
+                    if (Array.isArray(value)) {
+                        td.textContent = `[${value.length} Itens]`;
+                        // Se for uma lista de Psets, cria uma sub-lista de detalhes (opcional: pode ser muito longo)
                         
-                        if (prop && prop.Name) {
-                            propertiesFound = true;
-                            const propName = prop.Name.value || 'Sem nome';
-                            let propValue = 'N/A';
-                            
-                            // Recupera o valor
-                            if (prop.NominalValue && prop.NominalValue.value !== undefined) {
-                                propValue = prop.NominalValue.value;
-                            } else if (prop.Value && prop.Value.value !== undefined) { 
-                                propValue = prop.Value.value;
+                        value.forEach(item => {
+                            if (item.Name) {
+                                const subSection = document.createElement('details');
+                                const summary = document.createElement('summary');
+                                summary.textContent = item.Name;
+                                subSection.appendChild(summary);
+                                createPropertyTable(item.properties, subSection);
+                                container.appendChild(subSection);
                             }
-                            
-                            console.log(`   ✅ Propriedade encontrada (ID: ${propExpressID}): ${propName} = ${propValue}`);
-                            propertiesHTML += formatProperty(propName, propValue);
-                        } else {
-                            console.log(`   ❌ Propriedade não encontrada para handle: Handle {value: ${propExpressID}, type: 5}`);
-                        }
-                    });
-                }
-
-                propertiesHTML += '</ul>';
-                
-                if (propertiesFound) {
-                    htmlContent += propertiesHTML;
-                    console.log(`✅ ${psetName}: PROPRIEDADES ENCONTRADAS!`);
+                        });
+                        
+                        tr.remove(); // Remove a linha principal, pois já criamos o details abaixo
+                    } else if (value.value !== undefined) {
+                        // É uma propriedade simples com valor (e.g., IfcLabel: { value: 'nome', type: 1 })
+                        td.textContent = value.value;
+                    } else {
+                        // É um objeto aninhado que queremos detalhar (e.g., Pset com Name e Properties)
+                        
+                        const subSection = document.createElement('details');
+                        const summary = document.createElement('summary');
+                        summary.textContent = value.Name || 'Detalhes';
+                        subSection.appendChild(summary);
+                        createPropertyTable(value, subSection);
+                        container.appendChild(subSection);
+                        
+                        tr.remove(); // Remove a linha principal
+                    }
                 } else {
-                    // Mensagem de aviso se o carregamento falhar
-                    htmlContent += `
-                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 10px; margin: 5px 0;">
-                            <p style="margin: 0 0 5px 0; color: #856404; font-size: 12px; font-weight: bold;">
-                                ⚠️ Estrutura do Pset detectada mas propriedades não encontradas
-                            </p>
-                            <p style="margin: 0; color: #856404; font-size: 11px;">
-                                HasProperties: ${pset.HasProperties ? pset.HasProperties.length : 0} handles<br>
-                                ExpressID: ${pset.expressID}<br>
-                                Verifique o console para detalhes completos
-                            </p>
-                        </div>
-                    `;
-                    console.log(`❌ ${psetName}: Nenhuma propriedade encontrada após todas as tentativas`);
+                    td.textContent = value;
                 }
                 
-                htmlContent += `</div>`;
-            });
-        } else {
-            htmlContent += `
-                <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; text-align: center;">
-                    <h5 style="margin: 0; color: #856404;">⚠️ Nenhum Pset Encontrado</h5>
-                </div>
-            `;
-        }
+                if (tr.parentElement) { // Garante que a linha não foi removida
+                    tr.appendChild(td);
+                    table.appendChild(tr);
+                }
+            }
+            if (table.rows.length > 0) {
+                container.appendChild(table);
+            }
+        };
 
-        details.innerHTML = htmlContent;
+        createPropertyTable(props, details);
         panel.style.display = 'block';
-        
-        console.log(`📋 Elemento selecionado: ${elementName} (${elementType})`);
-        console.log(`📊 Total de Psets: ${props.psets ? props.psets.length : 0}`);
     }
 
-    // 🔥 FUNÇÃO AUXILIAR PARA FORMATAR PROPRIEDADES
-    function formatProperty(propName, propValue) {
-        if (typeof propValue === 'boolean') {
-            propValue = propValue ? '✅ Sim' : '❌ Não';
-        } else if (propValue === null || propValue === undefined) {
-            propValue = '<em style="color: #6c757d;">N/A</em>';
-        } else if (typeof propValue === 'string' && propValue.trim() === '') {
-            propValue = '<em style="color: #6c757d;">(vazio)</em>';
-        } else if (typeof propValue === 'object' && propValue.constructor.name !== 'Object') {
-             propValue = propValue.value !== undefined ? propValue.value : JSON.stringify(propValue);
-        }
-        
-        const isImportant = ['Nome', 'Tipo', 'Material', 'Diâmetro', 'Comprimento', 'Altura', 'Largura', 'Insumo', 'Código', 'Quantidade', 'Preço'].includes(propName);
-        const propStyle = isImportant ? 'font-weight: bold; color: #e83e8c;' : '';
-        
-        return `
-            <li style="margin-bottom: 6px; padding: 3px 0; border-bottom: 1px dotted #f0f0f0;">
-                <span style="${propStyle}">${propName}:</span> 
-                <span style="float: right; text-align: right; max-width: 60%; word-break: break-word;">${propValue}</span>
-            </li>
-        `;
-    }
 
-    // 🚀 INICIALIZAÇÃO
-    async function initializeViewer() {
-        try {
-            console.log("🚀 Iniciando aplicação...");
-            
-            // 🔥 INICIALIZA XEOKIT PRIMEIRO (agora com await)
-            await initializeXeokitViewer();
-            
-            // 🔥 CONFIGURA CONTROLES DE MEDIÇÃO
-            setupMeasurementControls();
-            
-            // 🔥 DEPOIS CARREGA OS MODELOS IFC
-            await loadMultipleIfcs(IFC_MODELS_TO_LOAD);
-            
-            console.log("🎉 Aplicação inicializada com sucesso!");
-            
-        } catch (error) {
-            console.error("🚨 Erro ao inicializar o visualizador:", error);
-        }
-    }
-
-    initializeViewer();
-
-    // =======================================================
-    // 🔹 EVENTOS DE INTERAÇÃO
-    // =======================================================
+    // -----------------------------------------------------------
+    // INICIALIZAÇÃO
+    // -----------------------------------------------------------
+    viewer = CreateViewer(container);
     
-    window.onmousemove = () => viewer?.IFC?.selector?.prePickIfcItem();
+    // Inicializa o xeokit *após* o viewer principal
+    initializeXeokitViewer().then(() => {
+        // Vincula eventos dos botões de medição
+        document.getElementById('start-measurement').onclick = toggleMeasurement;
+        document.getElementById('clear-measurements').onclick = clearMeasurements;
 
-    window.ondblclick = async (event) => {
-        if (!viewer || !viewer.IFC || !viewer.IFC.selector) return;
-        
-        event.preventDefault();
-        event.stopPropagation();
-        
-        const item = await viewer.IFC.selector.pickIfcItem(true);
+        // Se a medição estiver ativa, desliga a rotação do three.js
+        if (isMeasuring) {
+             viewer.context.controls.enabled = false;
+        }
 
-        if (!item || item.modelID === undefined || item.id === undefined) {
+        // Continua o carregamento dos modelos
+        loadMultipleIfcs(IFC_MODELS_TO_LOAD).then(() => {
+            console.log("🎉 Aplicação inicializada com sucesso!");
+        });
+    });
+
+    // CLIQUE PARA SELEÇÃO DE PROPRIEDADES (apenas se a medição estiver desativada)
+    window.ondblclick = async () => {
+        if (isMeasuring) return; // Ignora se o modo de medição estiver ativo
+
+        const result = await viewer.IFC.selector.pickIfcItem(true);
+        if (!result) {
             document.getElementById('properties-panel').style.display = 'none';
             viewer.IFC.selector.unHighlightIfcItems();
             lastProps = null;
@@ -628,23 +362,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         viewer.IFC.selector.unHighlightIfcItems();
-        viewer.IFC.selector.highlightIfcItem(item, false);
+        viewer.IFC.selector.highlightIfcItem(result.object, false);
         
         // O parâmetro 'true' (pesquisa profunda/recursiva) funciona agora que forçamos o cache.
-        const props = await viewer.IFC.getProperties(item.modelID, item.id, true);
+        const props = await viewer.IFC.getProperties(result.modelID, result.id, true);
         
         lastProps = props; 
         console.log("🟩 Item selecionado:", lastProps);
         
-        showProperties(props, item.id);
+        showProperties(props, result.id);
     };
 
     window.onkeydown = (event) => {
-        if (event.code === 'Escape' && viewer?.IFC?.selector) {
-            viewer.IFC.selector.unpickIfcItems();
-            viewer.IFC.selector.unHighlightIfcItems();
-            document.getElementById('properties-panel').style.display = 'none';
-            lastProps = null;
+        if (event.code === 'Escape') {
+             // Se estiver no modo de medição, a primeira tecla ESC deve desativá-lo
+            if (isMeasuring) {
+                toggleMeasurement();
+                return;
+            }
+             // Se não estiver medindo, limpa a seleção
+            if (viewer?.IFC?.selector) {
+                viewer.IFC.selector.unpickIfcItems();
+                viewer.IFC.selector.unHighlightIfcItems();
+                document.getElementById('properties-panel').style.display = 'none';
+                lastProps = null;
+            }
         }
     };
     
@@ -657,8 +399,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ifcURL = URL.createObjectURL(file);
                 await loadMultipleIfcs([ifcURL]); 
                 document.getElementById('properties-panel').style.display = 'none';
-                lastProps = null;
+                URL.revokeObjectURL(ifcURL); // Limpa o objeto URL
             }
         });
     }
+
 });

@@ -38,270 +38,151 @@
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
-            display: none;
-            font-size: 14px;
-            line-height: 1.5;
+            z-index: 10;
+            display: none; /* Escondido por padrão */
         }
 
         #properties-panel h3 {
             margin-top: 0;
-            border-bottom: 3px solid #007bff;
-            padding-bottom: 8px;
-            color: #007bff;
-            font-size: 1.3em;
+            color: #2a6fdb;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
         }
 
-        #properties-panel h4 {
-            color: #28a745;
-            font-size: 1.2em;
-            margin-top: 25px;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #dee2e6;
+        .props-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 13px;
         }
 
-        #properties-panel h5 {
-            margin: 0 0 10px 0;
-            color: #495057;
+        .props-table th,
+        .props-table td {
+            padding: 6px 8px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .props-table th {
             font-weight: 600;
-            font-size: 1.1em;
+            background-color: #f9f9f9;
+            width: 35%;
         }
-
-        #properties-panel ul {
-            list-style: none;
-            padding-left: 0;
-            margin: 0;
-        }
-
-        #properties-panel li {
-            margin-bottom: 6px;
-            padding: 3px 0;
-            border-bottom: 1px dotted #f0f0f0;
-            line-height: 1.4;
-        }
-
-        .type-info {
-            font-style: italic;
-            color: #888;
-        }
-
-        /* 🔥 CONTROLES DE VISIBILIDADE */
-        #visibility-controls {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background: rgba(255, 255, 255, 0.95);
+        
+        /* Estilo para detalhes de Psets */
+        details {
+            margin-top: 10px;
+            padding: 5px;
             border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
-            z-index: 2000;
-            min-width: 200px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            font-family: Arial, sans-serif;
+            border-radius: 4px;
+        }
+        
+        summary {
+            font-weight: bold;
+            cursor: pointer;
+            color: #007bff;
         }
 
-        #visibility-controls h4 {
-            margin: 0 0 10px 0;
+        /* CONTROLES FLUTUANTES */
+        #measurement-controls,
+        #visibility-controls,
+        #upload-control {
+            position: fixed;
+            left: 10px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 5;
             color: #333;
             font-size: 14px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
         }
 
-        .model-control {
-            margin-bottom: 8px;
+        #measurement-controls {
+            top: 10px;
+            width: 250px;
+        }
+
+        #visibility-controls {
+            top: 180px;
+            width: 250px;
+        }
+
+        #upload-control {
+            top: 130px;
+            width: 250px;
+            padding: 8px 15px 8px 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .model-control-item {
+            margin-top: 5px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
         }
 
-        .model-name {
-            font-size: 12px;
-            color: #666;
-            flex: 1;
+        .model-control-item label {
+            margin-left: 8px;
+            font-weight: 500;
         }
 
-        .visibility-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 11px;
-            transition: background-color 0.2s;
-        }
-
-        .visibility-btn:hover {
-            opacity: 0.9;
-        }
-
-        .visibility-btn.hidden {
-            background: #28a745;
-        }
-
-        .controls-row {
-            display: flex;
-            gap: 5px;
-            margin-top: 10px;
-        }
-
-        .control-all-btn {
-            flex: 1;
-            background: #6c757d;
-            color: white;
-            border: none;
-            padding: 6px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 11px;
-            transition: background-color 0.2s;
-        }
-
-        .control-all-btn:hover {
-            background: #5a6268;
-        }
-
-        .control-all-btn.show-all {
-            background: #28a745;
-        }
-
-        .control-all-btn.hide-all {
-            background: #dc3545;
-        }
-
-        /* 🔥 CONTROLES DE MEDIÇÃO */
-        #measurement-controls {
-            position: fixed;
-            top: 10px;
-            left: 450px;
-            background: rgba(255, 255, 255, 0.95);
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
-            z-index: 2000;
-            min-width: 180px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            font-family: Arial, sans-serif;
-        }
-
-        #measurement-controls h4 {
-            margin: 0 0 10px 0;
-            color: #333;
-            font-size: 14px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
-        }
-
+        /* ESTILOS DE BOTÃO MELHORADOS PARA INTERFACE MAIS FLUIDA */
         .measurement-btn {
-            background: #17a2b8;
+            background-color: #2a6fdb;
             color: white;
             border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
+            padding: 8px 15px;
+            margin-right: 5px;
+            border-radius: 6px;
             cursor: pointer;
-            font-size: 12px;
-            margin: 2px;
-            transition: background-color 0.2s;
-            width: 100%;
+            transition: background-color 0.2s, box-shadow 0.2s, transform 0.1s;
+            font-weight: 600;
+            margin-top: 5px;
         }
 
         .measurement-btn:hover {
-            background: #138496;
+            background-color: #1e5ac0;
+            transform: translateY(-1px);
         }
 
         .measurement-btn.active {
-            background: #dc3545;
+            background-color: #e04400; /* Cor de alerta quando ativo */
+            box-shadow: 0 0 10px rgba(224, 68, 0, 0.5);
         }
-
+        
         .measurement-btn.clear {
-            background: #6c757d;
+            background-color: #6c757d;
         }
 
         .measurement-btn.clear:hover {
-            background: #5a6268;
+            background-color: #5a6268;
         }
-
-        /* Estilo para botão de upload */
-        #file-input-container {
-            position: fixed;
-            top: 10px;
-            left: 220px;
-            z-index: 2000;
-        }
-
-        #file-input-container label {
-            background: #007bff;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.3s;
-        }
-
-        #file-input-container label:hover {
-            background: #0056b3;
-        }
-
-        #file-input {
-            display: none;
-        }
-
-        /* Scrollbar personalizada */
-        #properties-panel::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        #properties-panel::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 4px;
-        }
-
-        #properties-panel::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 4px;
-        }
-
-        #properties-panel::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
-        }
-
-        /* 🔥 ESTILOS PARA O XEOKIT CONTAINER */
+        
+        /* 🔥 GARANTE QUE O CONTAINER XEOKIT POSSA RECEBER EVENTOS QUANDO ATIVO */
         #xeokit-container {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            pointer-events: none;
-            z-index: 100;
+            z-index: 2; /* Acima do Three.js/IFC Viewer (que tem z-index 1 implicitamente) */
         }
-
-        #xeokit-canvas {
-            width: 100%;
-            height: 100%;
-            display: none;
-        }
-
-        /* Estilos para as medições (serão criados dinamicamente pelo xeokit) */
-        .xeokit-measurement {
-            font-family: Arial, sans-serif;
-        }
-
-        .xeokit-pointer-lens {
-            border: 2px solid #007bff;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.1);
-        }
+        
     </style>
 </head>
 
 <body>
     
     <div id="viewer-container">
-        <!-- 🔥 CONTAINER PARA XEOKIT SERÁ CRIADO DINAMICAMENTE -->
+        <!-- O Canvas do web-ifc-viewer será criado aqui -->
+        <!-- O #xeokit-container será criado aqui pelo JavaScript -->
+    </div>
+
+    <!-- CONTROLE DE UPLOAD -->
+    <div id="upload-control">
+        <label for="file-input" style="font-weight: bold; margin-bottom: 5px;">📤 Carregar IFC Local</label>
+        <input type="file" id="file-input" accept=".ifc" style="font-size: 12px;">
     </div>
 
     <!-- 🔥 CONTROLES DE MEDIÇÃO -->
@@ -310,7 +191,7 @@
         <button id="start-measurement" class="measurement-btn">Iniciar Medição</button>
         <button id="clear-measurements" class="measurement-btn clear">Limpar Todas</button>
         <div style="margin-top: 8px; font-size: 11px; color: #666;">
-            <strong>Dica:</strong> Clique nos vértices
+            <strong>Dica:</strong> Dê duplo clique (ou toque) para selecionar propriedades. Pressione ESC para limpar a seleção.
         </div>
     </div>
 
@@ -334,11 +215,6 @@
 
     <!-- SEU SCRIPT PRINCIPAL -->
     <script type="module" src="./bundle.js"></script>
-
-    <div id="file-input-container">
-        <label for="file-input">Abrir Arquivo IFC</label>
-        <input type="file" id="file-input">
-    </div>
 </body>
 
 </html>
