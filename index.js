@@ -35,14 +35,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return newViewer;
     }
 
-    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES
+    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (VERSÃO CORRIGIDA)
     function initializeXeokitViewer() {
         try {
-            // Verifica se o xeokit SDK está carregado
-            if (typeof window.xeokitSDK === 'undefined') {
+            // Verifica se o xeokit SDK está carregado (agora como variável global)
+            if (typeof window.ContextMenu === 'undefined') {
                 console.error("❌ xeokit SDK não encontrado. Verifique se o arquivo foi carregado.");
+                
+                // Tenta carregar dinamicamente
+                loadXeokitSDK();
                 return;
             }
+
+            console.log("✅ xeokit SDK detectado:", {
+                ContextMenu: typeof ContextMenu,
+                PointerLens: typeof PointerLens,
+                math: typeof math
+            });
 
             // Cria um container separado para o xeokit
             const xeokitContainer = document.createElement('div');
@@ -54,9 +63,8 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitCanvas.id = 'xeokit-canvas';
             xeokitContainer.appendChild(xeokitCanvas);
 
-            // Inicializa o viewer xeokit usando o SDK global
-            const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurementsMouseControl, PointerLens } = window.xeokitSDK;
-
+            // ✅ CORREÇÃO: Usa as classes diretamente do escopo global
+            // O xeokit SDK exporta as classes para o escopo global quando carregado como script
             xeokitViewer = new Viewer({
                 canvasId: "xeokit-canvas",
                 transparent: true,
@@ -65,7 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Configura os plugins de medição
             distanceMeasurements = new DistanceMeasurementsPlugin(xeokitViewer, {
-                // Configurações opcionais para personalizar a aparência das medições
                 color: "#FF0000",
                 fontFamily: "Arial",
                 fontSize: 12
@@ -84,6 +91,48 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error("❌ Erro ao inicializar xeokit:", error);
         }
+    }
+
+    // 🔥 FUNÇÃO PARA CARREGAR O XEOKIT DINAMICAMENTE
+    function loadXeokitSDK() {
+        console.log("🔄 Tentando carregar xeokit SDK dinamicamente...");
+        
+        const script = document.createElement('script');
+        script.src = './wasm/xeokit-sdk.es.js';
+        script.type = 'module';
+        
+        script.onload = function() {
+            console.log("✅ xeokit SDK carregado com sucesso");
+            // Tenta inicializar novamente após o carregamento
+            setTimeout(initializeXeokitViewer, 1000);
+        };
+        
+        script.onerror = function() {
+            console.error("❌ Falha ao carregar xeokit SDK");
+            // Fallback: tenta carregar como script normal (não módulo)
+            loadXeokitAsRegularScript();
+        };
+        
+        document.head.appendChild(script);
+    }
+
+    // 🔥 FALLBACK: CARREGAR COMO SCRIPT REGULAR
+    function loadXeokitAsRegularScript() {
+        console.log("🔄 Tentando carregar xeokit como script regular...");
+        
+        const script = document.createElement('script');
+        script.src = './wasm/xeokit-sdk.es.js';
+        
+        script.onload = function() {
+            console.log("✅ xeokit SDK carregado como script regular");
+            setTimeout(initializeXeokitViewer, 1000);
+        };
+        
+        script.onerror = function() {
+            console.error("❌ Falha completa ao carregar xeokit SDK");
+        };
+        
+        document.head.appendChild(script);
     }
 
     // 🔥 CONTROLES DE MEDIÇÃO
@@ -509,6 +558,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 🚀 INICIALIZAÇÃO
     async function initializeViewer() {
         try {
+            // 🔥 VERIFICAÇÃO DO AMBIENTE
+            console.log("🔍 Verificando ambiente...", {
+                xeokitSDK: typeof window.xeokitSDK,
+                ContextMenu: typeof ContextMenu,
+                Viewer: typeof Viewer,
+                PointerLens: typeof PointerLens
+            });
             // 🔥 INICIALIZA XEOKIT PRIMEIRO
             initializeXeokitViewer();
             setupMeasurementControls();
