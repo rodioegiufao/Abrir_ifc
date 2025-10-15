@@ -81,7 +81,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
             // Importa o xeokit (disponível globalmente devido ao index.html)
-            const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurement } = window.xeokitSDK;
+            // NOTA: Removemos DistanceMeasurement da desestruturação para evitar o TypeError
+            const { Viewer, DistanceMeasurementsPlugin } = window.xeokitSDK;
 
             // O construtor agora recebe o ID do CANVAS
             xeokitViewer = new Viewer({
@@ -95,8 +96,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Plugin de Medições
             distanceMeasurements = new DistanceMeasurementsPlugin(xeokitViewer, {});
 
-            // Controle de Medição
-            distanceMeasurementsControl = new DistanceMeasurement(distanceMeasurements);
+            // CORREÇÃO: Cria a medição usando o método createMeasurement() do plugin
+            distanceMeasurementsControl = distanceMeasurements.createMeasurement();
             distanceMeasurementsControl.visible = false; // Começa invisível
 
             console.log("✅ xeokit viewer inicializado com sucesso.");
