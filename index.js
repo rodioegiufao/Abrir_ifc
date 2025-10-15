@@ -50,8 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
         xeokitViewer.camera.perspective.fov = threeJSCamera.fov;
 
         // 3. Renderiza o xeokit para aplicar a mudança
-        xeokitViewer.scene.canvas.gl.canvas.style.display = 'block'; // Garante que está visível
-        xeokitViewer.scene.render();
+        // Nota: O xeokit por padrão cria seu próprio canvas dentro do container.
+        // Se precisar de renderização manual, use xeokitViewer.scene.render();
     };
 
 
@@ -78,13 +78,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // 2. Inicializa o xeokit Viewer
             const xeokitSDK = window.xeokitSDK; // Já importado globalmente no index.html
             
+            // ✅ CORREÇÃO 1: Usar 'container' em vez de 'canvasId' ao passar o elemento DIV pai.
+            // Isso resolve o erro "Mandatory config expected: valid canvasId or canvasElement".
             xeokitViewer = new xeokitSDK.Viewer({
-                canvasId: xeokitContainer.id, // ID do canvas que ele criará DENTRO do container
+                container: xeokitContainer, // Passa o elemento DOM diretamente
                 transparent: true,
                 saoEnabled: true,
                 edgeThreshold: 5
             });
-
+            
             // 3. Inicializa o plugin de Medição
             distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
                 snapper: new xeokitSDK.DistanceMeasurementSnapper(), // Habilita o Snapper
@@ -93,9 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 lineColor: "red"
             });
 
-            // ❌ CORREÇÃO: Removemos a inicialização do DistanceMeasurementsControl daqui.
-            // Ele será criado na primeira vez que a função toggleMeasurement for chamada.
-            // Isso evita a chamada prematura que causa o erro "entity" undefined.
+            // O DistanceMeasurementsControl será criado sob demanda em toggleMeasurement.
 
             console.log("✅ xeokit viewer inicializado. Plugins prontos.");
 
@@ -105,8 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
         } catch (e) {
-            // Este console.error era a linha que estava antes da correção, agora a causa
-            // deve ser removida ou a linha irá logar um erro que não existe mais.
             console.error("❌ Erro ao inicializar xeokit viewer:", e);
         }
     }
@@ -117,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isMeasuring = !isMeasuring;
         const button = document.getElementById('start-measurement');
         
-        // ✅ NOVO: Inicializa o controle APENAS na primeira chamada, prevenindo o erro de 'entity'.
+        // Inicializa o controle APENAS na primeira chamada
         if (!distanceMeasurementsControl && distanceMeasurements) {
             const xeokitSDK = window.xeokitSDK;
             distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements);
@@ -159,20 +157,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ... (O resto das funções e do código de inicialização) ...
     
-    // ... FUNÇÃO loadMultipleIfcs ...
-    // ... FUNÇÃO showProperties ...
-    // ... FUNÇÃO createIfcTreeItem ...
-    // ... FUNÇÃO toggleModelVisibility ...
-    // ... FUNÇÃO updateVisibilityControls ...
-    // ... FUNÇÃO formatValue ...
-    
     // 🔥 CONFIGURAÇÃO INICIAL
     
     // 1. Cria o Viewer (web-ifc-viewer)
     viewer = CreateViewer(container);
     
     // 2. Inicializa o Viewer (web-ifc-viewer)
-    viewer.IFC.set
     viewer.IFC.setWasmPath('wasm/'); // Define o caminho para os arquivos .wasm
     viewer.IFC.loader.ifcManager.applyWebIfcConfig({
         COORDINATE_TO_ORIGIN: true,
@@ -202,7 +192,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Listener de clique para Seleção (web-ifc-viewer)
     container.ondblclick = async (event) => {
-        // ... (código de seleção de elemento)
         const result = await viewer.IFC.selector.pick(true);
 
         if (!result) {
@@ -215,7 +204,6 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.IFC.selector.unHighlightIfcItems();
         viewer.IFC.selector.highlightIfcItem(result.modelID, result.id, false);
         
-        // O parâmetro 'true' (pesquisa profunda/recursiva) funciona agora que forçamos o cache.
         const props = await viewer.IFC.getProperties(result.modelID, result.id, true);
         
         lastProps = props; 
@@ -248,12 +236,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const file = changed.target.files[0];
             if (file) {
                 // Para arquivos locais, usamos a função de carregamento de arquivos nativa do web-ifc-viewer
-                // Não é necessário usar loadMultipleIfcs (que é otimizada para URLs)
+                // true para limpar modelos existentes
                 try {
-                    const model = await viewer.IFC.loadIfc(file, true); // true para limpar modelos existentes
+                    const model = await viewer.IFC.loadIfc(file, true); 
                     
                     if (model && model.modelID !== undefined) {
-                         // Limpa a lista de modelos existentes (já que loadIfc limpa o viewer)
+                         // Limpa a lista de modelos existentes
                         loadedModels.clear(); 
                         loadedModels.set(model.modelID, {
                             visible: true,
@@ -270,7 +258,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error("❌ Erro ao carregar arquivo local IFC:", e);
                 }
                 document.getElementById('properties-panel').style.display = 'none';
-                // O objeto URL.createObjectURL não é necessário aqui
             }
         });
     }
@@ -278,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ----------------------------------
-// FUNÇÕES AUXILIARES (Definidas fora do DOMContentLoaded para melhor organização)
+// FUNÇÕES AUXILIARES
 // ----------------------------------
 
 // 🔥 Carrega múltiplos arquivos IFC de URLs
@@ -291,7 +278,9 @@ async function loadMultipleIfcs(urls) {
     const loadPromises = urls.map(async (url, index) => {
         console.log(`📦 Tentando carregar: ${url}`);
         try {
-            const model = await viewer.IFC.loadIfc(url, false); // false para NÃO limpar modelos existentes
+            // ✅ CORREÇÃO 2: Usar 'loadIfcUrl' para carregar strings de URL de assets estáticos.
+            // Isso previne o erro 'createObjectURL' que ocorre quando a string é mal interpretada.
+            const model = await viewer.IFC.loadIfcUrl(url, false); // false para NÃO limpar modelos existentes
             
             if (model && model.modelID !== undefined) {
                 loadedModels.set(model.modelID, {
@@ -447,9 +436,9 @@ async function toggleModelVisibility(modelID, visible) {
     if (!viewer || modelID === undefined) return;
 
     if (visible) {
-        viewer.context.get= viewer.context.getScene().getMesh(modelID).visible = true;
+        viewer.context.getScene().getMesh(modelID).visible = true;
     } else {
-        viewer.context.get= viewer.context.getScene().getMesh(modelID).visible = false;
+        viewer.context.getScene().getMesh(modelID).visible = false;
     }
     
     const modelData = loadedModels.get(modelID);
