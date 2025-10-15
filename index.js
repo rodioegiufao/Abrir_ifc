@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
 
-    // 🔥 INICIALIZAÇÃO CORRIGIDA DO PLUGIN DE MEDIÇÕES
+    // 🔥 INICIALIZAR XEOKIT VIEWER (VERSÃO CORRIGIDA - CANVAS FIX)
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
@@ -66,45 +66,134 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // ... (código anterior para criar container e canvas) ...
+            // ✅ CORREÇÃO 1: Garante que o container principal existe
+            const viewerContainer = document.getElementById('viewer-container');
+            if (!viewerContainer) {
+                console.error("❌ Container principal não encontrado");
+                return;
+            }
 
-            // ✅ INICIALIZAÇÃO DO VIEWER
-            xeokitViewer = new xeokitSDK.Viewer({
-                canvasId: "xeokit-canvas",
-                transparent: true,
-                alpha: true,
-                premultipliedAlpha: false
+            // ✅ CORREÇÃO 2: Cria o container do xeokit de forma mais robusta
+            xeokitContainer = document.getElementById('xeokit-container');
+            if (!xeokitContainer) {
+                xeokitContainer = document.createElement('div');
+                xeokitContainer.id = 'xeokit-container';
+                xeokitContainer.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    z-index: 10;
+                    pointer-events: none;
+                    display: none;
+                `;
+                viewerContainer.appendChild(xeokitContainer);
+                console.log("✅ xeokit-container criado e anexado.");
+            }
+
+            // ✅ CORREÇÃO 3: Cria o canvas com ID único e garante que existe no DOM
+            let xeokitCanvas = document.getElementById('xeokit-canvas');
+            if (!xeokitCanvas) {
+                xeokitCanvas = document.createElement('canvas');
+                xeokitCanvas.id = 'xeokit-canvas';
+                
+                // Define dimensões explícitas
+                xeokitCanvas.width = viewerContainer.clientWidth;
+                xeokitCanvas.height = viewerContainer.clientHeight;
+                
+                // Estilo para preencher o container
+                xeokitCanvas.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    display: block;
+                `;
+                
+                xeokitContainer.appendChild(xeokitCanvas);
+                console.log("✅ Canvas criado com ID:", xeokitCanvas.id);
+                
+                // ✅ AGUARDA O DOM ATUALIZAR
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            // ✅ CORREÇÃO 4: Verifica se o canvas realmente existe no DOM
+            const canvasElement = document.getElementById('xeokit-canvas');
+            if (!canvasElement) {
+                throw new Error("Canvas não foi encontrado no DOM após criação");
+            }
+
+            console.log("🎯 Canvas encontrado no DOM:", {
+                id: canvasElement.id,
+                width: canvasElement.width,
+                height: canvasElement.height,
+                inDOM: document.body.contains(canvasElement)
             });
+
+            // ✅ CORREÇÃO 5: Tenta ambas as formas de inicialização
+            let viewerInitialized = false;
+            
+            // Tentativa 1: Com canvasId
+            try {
+                console.log("🔄 Tentando inicializar com canvasId...");
+                xeokitViewer = new xeokitSDK.Viewer({
+                    canvasId: "xeokit-canvas",
+                    transparent: true,
+                    alpha: true,
+                    premultipliedAlpha: false
+                });
+                viewerInitialized = true;
+                console.log("✅ Viewer inicializado com canvasId");
+            } catch (idError) {
+                console.warn("⚠️ Falha com canvasId, tentando com canvasElement...", idError.message);
+                
+                // Tentativa 2: Com canvasElement
+                try {
+                    xeokitViewer = new xeokitSDK.Viewer({
+                        canvasElement: canvasElement,
+                        transparent: true,
+                        alpha: true,
+                        premultipliedAlpha: false
+                    });
+                    viewerInitialized = true;
+                    console.log("✅ Viewer inicializado com canvasElement");
+                } catch (elementError) {
+                    console.error("❌ Falha com canvasElement:", elementError.message);
+                    throw new Error("Não foi possível inicializar o viewer com nenhum método");
+                }
+            }
+
+            if (!viewerInitialized || !xeokitViewer) {
+                throw new Error("Viewer não foi inicializado");
+            }
 
             console.log("✅ xeokit viewer inicializado com sucesso.");
 
-            // ✅ INICIALIZAÇÃO CORRIGIDA DO PLUGIN DE MEDIÇÕES
+            // ✅ INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES
             try {
                 distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
-                    // Configurações básicas
                     pointSize: 4,
                     lineWidth: 2,
                     fontColor: "#FFFFFF",
                     labelBackgroundColor: "rgba(0, 0, 0, 0.8)",
-                    lineColor: "#FF0000",
-                    labelPrefix: "Dist: ",
-                    labelSuffix: " m"
+                    lineColor: "#FF0000"
                 });
-
-                console.log("✅ Plugin DistanceMeasurementsPlugin inicializado:", distanceMeasurements);
-                
-                // ✅ VERIFICA SE O PLUGIN FOI CRIADO CORRETAMENTE
-                if (!distanceMeasurements || typeof distanceMeasurements !== 'object') {
-                    throw new Error("Plugin de medições não foi criado corretamente");
-                }
-
+                console.log("✅ Plugin de medições inicializado.");
             } catch (pluginError) {
-                console.error("❌ Erro ao inicializar plugin de medições:", pluginError);
+                console.error("❌ Erro no plugin de medições:", pluginError);
                 distanceMeasurements = null;
-                return;
             }
 
-            // ... (resto do código de sincronização de câmera) ...
+            // ✅ CONFIGURA SINCRONIZAÇÃO DE CÂMERA
+            if (viewer && viewer.context && viewer.context.ifcCamera) {
+                viewer.context.ifcCamera.controls.addEventListener("change", () => {
+                    syncCameras(
+                        viewer.context.ifcCamera.activeCamera, 
+                        viewer.context.ifcCamera.controls, 
+                        xeokitViewer
+                    );
+                });
+                console.log("✅ Sincronização de câmera configurada.");
+            }
 
         } catch (e) {
             console.error("❌ Erro ao inicializar xeokit viewer:", e);
