@@ -9,7 +9,8 @@ let xeokitViewer;
 let distanceMeasurements;
 let distanceMeasurementsControl;
 let isMeasuring = false;
-let xeokitContainer; // Definido para fácil acesso aos estilos e DOM
+// Declaração de xeokitContainer como variável de escopo mais alto
+let xeokitContainer; 
 
 // ✅ LISTA DE ARQUIVOS IFC 
 const IFC_MODELS_TO_LOAD = [
@@ -42,32 +43,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const threePos = threeJSCamera.position;
         const threeTarget = orbitControls.target;
 
-        // 1. Sincroniza posição e orientação
         xeokitViewer.camera.eye = [threePos.x, threePos.y, threePos.z];
         xeokitViewer.camera.look = [threeTarget.x, threeTarget.y, threeTarget.z];
         xeokitViewer.camera.up = [threeJSCamera.up.x, threeJSCamera.up.y, threeJSCamera.up.z];
         
-        // 2. Sincroniza parâmetros de projeção
         xeokitViewer.camera.projection = "perspective";
         xeokitViewer.camera.near = threeJSCamera.near;
         xeokitViewer.camera.far = threeJSCamera.far;
         xeokitViewer.camera.fovy = threeJSCamera.fov;
 
-        // 3. Garante que o xeokit redesenhe
         xeokitViewer.scene.redraw();
     };
 
     // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES
-    async function initializeXeokitViewer() {
+    function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
 
-            // ✅ SOLUÇÃO: Importa dinamicamente o módulo xeokit
-            const xeokitSDK = await import('./wasm/xeokit-sdk.es.js');
-            
-            console.log("✅ xeokit SDK importado:", Object.keys(xeokitSDK).slice(0, 10).concat('...'));
-
-            // 1. Cria o contêiner do Xeokit (se não existir, o que não deve acontecer)
+            // 1. CRIAÇÃO E ANEXAÇÃO DO CONTÊINER XEOKIT
+            // O xeokitContainer é criado aqui, garantindo que ele exista antes de tentar inicializar o Viewer
             xeokitContainer = document.createElement('div');
             xeokitContainer.id = 'xeokit-container';
             xeokitContainer.style.position = 'absolute';
@@ -75,29 +69,33 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.left = '0';
             xeokitContainer.style.width = '100%';
             xeokitContainer.style.height = '100%';
-            xeokitContainer.style.pointerEvents = 'none'; 
+            xeokitContainer.style.pointerEvents = 'none'; // Inicialmente desativado
             
-            // 2. CORREÇÃO 1: Garante que o contêiner está anexado *antes* de inicializar o Viewer
+            // O container Three.js/IFC Viewer é o pai
             document.getElementById('viewer-container').appendChild(xeokitContainer);
 
-            // 3. Inicializa o xeokit Viewer, passando o ID do elemento
+            // CORREÇÃO 1: Usa a variável global 'xeokitSDK' (importada no index.html)
+            if (typeof window.xeokitSDK === 'undefined') {
+                 throw new Error("xeokit SDK not found on window.xeokitSDK. Check index.html import.");
+            }
+            const xeokitSDK = window.xeokitSDK;
+
+            // 2. Inicializa o xeokit Viewer, usando o ID do elemento agora garantido no DOM
             xeokitViewer = new xeokitSDK.Viewer({
-                canvasId: xeokitContainer.id, // O ID agora é garantidamente válido no DOM
+                canvasId: xeokitContainer.id, 
                 transparent: true, 
                 sRGBOutput: true
             });
-
-            // 4. Configura a sincronização da câmera do Three.js para o Xeokit
+            
+            // 3. Configura a sincronização da câmera do Three.js para o Xeokit
             const threeJSCamera = viewer.context.camera;
             const orbitControls = viewer.context.controls;
 
-            // CRUCIAL: Sincroniza a câmera sempre que o controle (rotação, pan, zoom) for alterado.
             orbitControls.addEventListener('change', () => syncCameras(threeJSCamera, orbitControls, xeokitViewer));
             
-            // Sincroniza a câmera na inicialização
             syncCameras(threeJSCamera, orbitControls, xeokitViewer);
 
-            // 5. Inicializa o plugin de medições
+            // 4. Inicializa o plugin de medições
             distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
                 fontFamily: "sans-serif",
                 fontSize: "14px",
@@ -106,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 labelBackgroundColor: "rgba(255, 255, 255, 0.7)" 
             });
 
-            // 6. Adiciona o controle de mouse para medições de distância
+            // 5. Adiciona o controle de mouse para medições de distância
             distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements);
 
             console.log("✅ Plugin de medições xeokit inicializado com sucesso");
@@ -121,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+
     // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO
     const toggleMeasurement = () => {
         if (!distanceMeasurementsControl || !xeokitContainer) return;
@@ -132,27 +131,19 @@ document.addEventListener('DOMContentLoaded', () => {
             startBtn.textContent = 'Parar Medição';
             startBtn.classList.add('active');
             
-            // 1. Desativa os controles padrão do three.js para que o xeokit possa capturar os cliques
             viewer.context.controls.enabled = false;
-            
-            // 2. Permite que o xeokit capture os eventos do mouse/toque
             xeokitContainer.style.pointerEvents = 'auto'; 
-
-            // 3. Ativa o controle de medição do xeokit
             distanceMeasurementsControl.setActive(true);
+            
             console.log("📏 Modo medição ativado");
         } else {
             startBtn.textContent = 'Iniciar Medição';
             startBtn.classList.remove('active');
             
-            // 1. Reativa os controles padrão do three.js
             viewer.context.controls.enabled = true;
-            
-            // 2. Permite que o Three.js/IFC Viewer capture os eventos novamente
             xeokitContainer.style.pointerEvents = 'none'; 
-
-            // 3. Desativa o controle de medição do xeokit
             distanceMeasurementsControl.setActive(false);
+            
             console.log("🚫 Modo medição desativado");
         }
         
@@ -171,48 +162,59 @@ document.addEventListener('DOMContentLoaded', () => {
     // FUNÇÕES DE SUPORTE
     // -----------------------------------------------------------
     
-    // 🔥 CORREÇÃO 2: Garante que estamos passando o objeto de configuração correto
+    // 🔥 CORREÇÃO 2: Garante que estamos passando o objeto de configuração **apenas com a URL**
     const loadMultipleIfcs = async (ifcUrls) => {
         if (viewer && ifcUrls && ifcUrls.length > 0) {
             console.log(`🔄 Iniciando carregamento de ${ifcUrls.length} modelo(s)...`);
             
+            // Limpa modelos existentes (se houver, e não for um carregamento local)
+            if (loadedModels.size > 0 && ifcUrls.some(url => url.startsWith('models/'))) {
+                 viewer.IFC.loader.ifcManager.dispose();
+                 loadedModels.clear();
+                 document.getElementById('visibility-controls').innerHTML = '';
+            }
+
+            let successfulLoads = 0;
+
             for (const ifcUrl of ifcUrls) {
                 console.log(`📦 Tentando carregar: ${ifcUrl}`);
                 try {
-                    // Prepara o objeto de configuração para o loadIfcUrl
+                    // Prepara o objeto de configuração: SOMENTE a URL é garantida
+                    // Os paths WASM são definidos globalmente na inicialização do viewer.
                     const loadConfig = {
-                        url: ifcUrl, 
-                        wasmsPath: 'wasm/', 
-                        caching: true, 
-                        autoSetWasm: true 
+                        url: ifcUrl,
+                        // Removida a configuração redundante de paths WASM que poderia causar problemas
                     };
                     
                     const model = await viewer.IFC.loadIfcUrl(loadConfig);
                     
                     if (model && model.modelID !== undefined) { 
-                        loadedModels.set(model.modelID, {
-                            visible: true,
-                            name: ifcUrl.split('/').pop(),
-                            url: ifcUrl
-                        });
-                        console.log(`✅ Sucesso: ${ifcUrl.split('/').pop()} (ID: ${model.modelID})`);
-                        
-                        await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
-                        console.log(`✅ Cache populado para o modelo: ${ifcUrl.split('/').pop()}`);
-                    } else {
-                        // Se model for null ou inválido, apenas emite o aviso.
-                        console.warn(`⚠️ Aviso: O carregamento de ${ifcUrl} falhou, ignorando o modelo.`);
+                        // Verifica se o modelo já existe (para evitar duplicidade em uploads locais)
+                        if (!loadedModels.has(model.modelID)) {
+                            loadedModels.set(model.modelID, {
+                                visible: true,
+                                name: ifcUrl.split('/').pop().split('\\').pop(), // Manipulação de paths
+                                url: ifcUrl
+                            });
+                            successfulLoads++;
+                            
+                            console.log(`✅ Sucesso: ${loadedModels.get(model.modelID).name} (ID: ${model.modelID})`);
+                            
+                            // Popula o cache
+                            await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
+                            console.log(`✅ Cache populado para o modelo: ${loadedModels.get(model.modelID).name}`);
+                        }
                     }
                 } catch (error) {
-                    // O erro de fetch 404 é capturado aqui
+                    // O erro de fetch 404/ [object Object] é capturado aqui
                     console.error(`❌ Erro fatal ao carregar o modelo ${ifcUrl}:`, error.message || error);
                 }
             }
-            console.log(`🎉 ${loadedModels.size}/${ifcUrls.length} modelo(s) carregados!`);
+            console.log(`🎉 ${successfulLoads}/${ifcUrls.length} modelo(s) carregados!`);
             updateVisibilityControls();
             
-            if (loadedModels.size > 0) {
-                viewer.context.fitToFrame(loadedModels.keys()); 
+            if (successfulLoads > 0) {
+                viewer.context.fitToFrame(Array.from(loadedModels.keys())); 
             }
         }
     };
@@ -333,23 +335,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // INICIALIZAÇÃO
     // -----------------------------------------------------------
     viewer = CreateViewer(container);
+
+    // CRUCIAL: Inicializa o xeokit *imediatamente* para garantir que o elemento exista
+    initializeXeokitViewer();
     
-    // Inicializa o xeokit *após* o viewer principal
-    initializeXeokitViewer().then(() => {
-        // Vincula eventos dos botões de medição
-        document.getElementById('start-measurement').onclick = toggleMeasurement;
-        document.getElementById('clear-measurements').onclick = clearMeasurements;
+    // Vincula eventos dos botões de medição
+    document.getElementById('start-measurement').onclick = toggleMeasurement;
+    document.getElementById('clear-measurements').onclick = clearMeasurements;
 
-        if (isMeasuring) {
-             viewer.context.controls.enabled = false;
-        }
-
-        // Continua o carregamento dos modelos
-        loadMultipleIfcs(IFC_MODELS_TO_LOAD).then(() => {
-            console.log("🎉 Aplicação inicializada com sucesso!");
-        });
+    // Inicia o carregamento dos modelos de servidor
+    loadMultipleIfcs(IFC_MODELS_TO_LOAD).then(() => {
+        console.log("🎉 Aplicação inicializada com sucesso!");
     });
-
+    
     // CLIQUE PARA SELEÇÃO DE PROPRIEDADES (apenas se a medição estiver desativada)
     window.ondblclick = async () => {
         if (isMeasuring) return; 
@@ -396,14 +394,16 @@ document.addEventListener('DOMContentLoaded', () => {
         input.addEventListener("change", async (changed) => {
             const file = changed.target.files[0];
             if (file) {
-                // Para arquivos locais, usamos a função de carregamento de arquivos nativa do web-ifc-viewer
-                // Não é necessário usar loadMultipleIfcs (que é otimizada para URLs)
+                 // Limpa modelos existentes, pois o loadIfc fará isso internamente
+                viewer.IFC.loader.ifcManager.dispose();
+                loadedModels.clear(); 
+                document.getElementById('visibility-controls').innerHTML = ''; // Limpa os controles
+                
                 try {
-                    const model = await viewer.IFC.loadIfc(file, true); // true para limpar modelos existentes
+                    // Carrega arquivo local
+                    const model = await viewer.IFC.loadIfc(file); 
                     
                     if (model && model.modelID !== undefined) {
-                         // Limpa a lista de modelos existentes (já que loadIfc limpa o viewer)
-                        loadedModels.clear(); 
                         loadedModels.set(model.modelID, {
                             visible: true,
                             name: file.name,
@@ -413,13 +413,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.log(`✅ Sucesso no carregamento local: ${file.name} (ID: ${model.modelID})`);
                         await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
                         updateVisibilityControls();
-                        viewer.context.fitToFrame([model.modelID]);
+                        viewer.context.fitToFrame(Array.from(loadedModels.keys()));
                     }
                 } catch (e) {
                     console.error("❌ Erro ao carregar arquivo local IFC:", e);
                 }
                 document.getElementById('properties-panel').style.display = 'none';
-                // O objeto URL.createObjectURL não é necessário aqui
             }
         });
     }
