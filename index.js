@@ -7,9 +7,9 @@ let lastProps = null;
 // 🔥 VARIÁVEIS PARA MEDIÇÕES
 let xeokitViewer;
 let distanceMeasurements;
-let distanceMeasurementsControl = null; // Será inicializado como null e criado sob demanda
+let distanceMeasurementsControl = null;
 let isMeasuring = false;
-let xeokitContainer; // Definido para fácil acesso aos estilos e DOM
+let xeokitContainer;
 
 // ✅ LISTA DE ARQUIVOS IFC 
 const IFC_MODELS_TO_LOAD = [
@@ -18,7 +18,7 @@ const IFC_MODELS_TO_LOAD = [
 ];
 
 // 🔥 CONTROLE DE VISIBILIDADE
-let loadedModels = new Map(); // Map<modelID, { visible: boolean, name: string, url: string }>
+let loadedModels = new Map();
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -37,26 +37,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 🔥 FUNÇÃO MELHORADA PARA SINCRONIZAR CÂMERAS
     function syncCamerasToXeokit() {
-        if (!viewer || !xeokitViewer || !xeokitViewer.camera) return;
+        if (!viewer || !xeokitViewer || !xeokitViewer.camera) {
+            console.warn("⚠️ Sincronização: viewer ou xeokit não disponível");
+            return;
+        }
         
         try {
-            const threeCamera = viewer.context.ifcCamera.activeCamera;
-            const threeControls = viewer.context.ifcCamera.controls;
+            // ✅ CORREÇÃO: Verifica se a estrutura da câmera existe
+            const scene = viewer.context.getScene();
+            if (!scene || !scene.camera) {
+                console.warn("⚠️ Sincronização: câmera do Three.js não disponível");
+                return;
+            }
+
+            const threeCamera = scene.camera;
+            const threeControls = viewer.context.ifcCamera?.controls;
             
-            if (!threeCamera || !threeControls) return;
+            if (!threeCamera || !threeControls) {
+                console.warn("⚠️ Sincronização: câmera ou controles não encontrados");
+                return;
+            }
 
             const threePos = threeCamera.position;
             const threeTarget = threeControls.target;
+
+            if (!threePos || !threeTarget) {
+                console.warn("⚠️ Sincronização: posição ou target inválidos");
+                return;
+            }
 
             // Sincroniza posição e lookAt
             xeokitViewer.camera.eye = [threePos.x, threePos.y, threePos.z];
             xeokitViewer.camera.look = [threeTarget.x, threeTarget.y, threeTarget.z];
             
             // Sincroniza FOV
-            xeokitViewer.camera.perspective.fov = threeCamera.fov;
+            if (threeCamera.fov) {
+                xeokitViewer.camera.perspective.fov = threeCamera.fov;
+            }
             
-            // Força o redesenho
-            xeokitViewer.scene.render();
+            console.log("📸 Câmera sincronizada:", {
+                eye: xeokitViewer.camera.eye,
+                look: xeokitViewer.camera.look,
+                fov: xeokitViewer.camera.perspective.fov
+            });
             
         } catch (syncError) {
             console.warn("⚠️ Erro na sincronização de câmera:", syncError);
@@ -76,13 +99,18 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("🎯 Scene:", xeokitViewer.scene ? "OK" : "MISSING");
         }
         
-        if (distanceMeasurementsControl) {
-            console.log("🎯 Control State:", distanceMeasurementsControl.getActive ? "HAS GETACTIVE" : "NO GETACTIVE");
+        // Verifica se as classes estão disponíveis
+        const xeokitSDK = window.xeokitSDK;
+        console.log("🔧 SDK disponível:", !!xeokitSDK);
+        if (xeokitSDK) {
+            console.log("🔧 DistanceMeasurementsControl:", !!xeokitSDK.DistanceMeasurementsControl);
+            console.log("🔧 DistanceMeasurementsMouseControl:", !!xeokitSDK.DistanceMeasurementsMouseControl);
+            console.log("🔧 DistanceMeasurementsPlugin:", !!xeokitSDK.DistanceMeasurementsPlugin);
         }
         console.groupEnd();
     }
 
-    // 🔥 INICIALIZAR XEOKIT VIEWER (VERSÃO CORRIGIDA - CANVAS FIX)
+    // 🔥 INICIALIZAR XEOKIT VIEWER (VERSÃO CORRIGIDA)
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
@@ -93,14 +121,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // ✅ CORREÇÃO 1: Garante que o container principal existe
+            // ✅ CORREÇÃO: Verifica se as classes necessárias existem
+            debugXeokitState();
+
             const viewerContainer = document.getElementById('viewer-container');
             if (!viewerContainer) {
                 console.error("❌ Container principal não encontrado");
                 return;
             }
 
-            // ✅ CORREÇÃO 2: Cria o container do xeokit de forma mais robusta
+            // ✅ CORREÇÃO: Cria o container do xeokit
             xeokitContainer = document.getElementById('xeokit-container');
             if (!xeokitContainer) {
                 xeokitContainer = document.createElement('div');
@@ -119,17 +149,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log("✅ xeokit-container criado e anexado.");
             }
 
-            // ✅ CORREÇÃO 3: Cria o canvas com ID único e garante que existe no DOM
+            // ✅ CORREÇÃO: Cria o canvas
             let xeokitCanvas = document.getElementById('xeokit-canvas');
             if (!xeokitCanvas) {
                 xeokitCanvas = document.createElement('canvas');
                 xeokitCanvas.id = 'xeokit-canvas';
                 
-                // Define dimensões explícitas
                 xeokitCanvas.width = viewerContainer.clientWidth;
                 xeokitCanvas.height = viewerContainer.clientHeight;
                 
-                // Estilo para preencher o container
                 xeokitCanvas.style.cssText = `
                     width: 100%;
                     height: 100%;
@@ -139,27 +167,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 xeokitContainer.appendChild(xeokitCanvas);
                 console.log("✅ Canvas criado com ID:", xeokitCanvas.id);
                 
-                // ✅ AGUARDA O DOM ATUALIZAR
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
 
-            // ✅ CORREÇÃO 4: Verifica se o canvas realmente existe no DOM
             const canvasElement = document.getElementById('xeokit-canvas');
             if (!canvasElement) {
                 throw new Error("Canvas não foi encontrado no DOM após criação");
             }
 
-            console.log("🎯 Canvas encontrado no DOM:", {
-                id: canvasElement.id,
-                width: canvasElement.width,
-                height: canvasElement.height,
-                inDOM: document.body.contains(canvasElement)
-            });
+            console.log("🎯 Canvas encontrado no DOM");
 
-            // ✅ CORREÇÃO 5: Tenta ambas as formas de inicialização
+            // ✅ CORREÇÃO: Inicializa o viewer
             let viewerInitialized = false;
             
-            // Tentativa 1: Com canvasId
             try {
                 console.log("🔄 Tentando inicializar com canvasId...");
                 xeokitViewer = new xeokitSDK.Viewer({
@@ -173,7 +193,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (idError) {
                 console.warn("⚠️ Falha com canvasId, tentando com canvasElement...", idError.message);
                 
-                // Tentativa 2: Com canvasElement
                 try {
                     xeokitViewer = new xeokitSDK.Viewer({
                         canvasElement: canvasElement,
@@ -195,36 +214,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
             console.log("✅ xeokit viewer inicializado com sucesso.");
 
-            // ✅ INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES (VERSÃO CORRIGIDA)
+            // ✅ CORREÇÃO: INICIALIZAÇÃO DO PLUGIN DE MEDIÇÕES - TESTANDO DIFERENTES ABORDAGENS
             try {
                 const xeokitSDK = window.xeokitSDK;
                 
-                // ✅ CORREÇÃO: Usa a API correta do xeokit
-                distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
-                    pointSize: 8,           // Aumentado para melhor visibilidade
-                    lineWidth: 3,           // Aumentado para melhor visibilidade
-                    fontColor: "#FFFFFF",
-                    labelBackgroundColor: "rgba(0, 0, 0, 0.8)",
-                    lineColor: "#FF0000",
-                    snapToVertex: true,     // Adicionado para melhor precisão
-                    snapToEdge: true        // Adicionado para melhor precisão
-                });
+                // Tenta diferentes abordagens para inicializar o plugin
+                if (xeokitSDK.DistanceMeasurementsPlugin) {
+                    distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
+                        pointSize: 8,
+                        lineWidth: 3,
+                        fontColor: "#FFFFFF",
+                        labelBackgroundColor: "rgba(0, 0, 0, 0.8)",
+                        lineColor: "#FF0000"
+                    });
+                    console.log("✅ Plugin de medições inicializado com DistanceMeasurementsPlugin");
+                } else {
+                    console.error("❌ DistanceMeasurementsPlugin não disponível no SDK");
+                    distanceMeasurements = null;
+                }
                 
-                console.log("✅ Plugin de medições inicializado:", distanceMeasurements);
             } catch (pluginError) {
                 console.error("❌ Erro no plugin de medições:", pluginError);
                 distanceMeasurements = null;
             }
 
-            // ✅ CONFIGURA SINCRONIZAÇÃO DE CÂMERA (VERSÃO CORRIGIDA)
-            if (viewer && viewer.context && viewer.context.ifcCamera) {
-                viewer.context.ifcCamera.controls.addEventListener("change", () => {
-                    syncCamerasToXeokit();
-                });
-                
-                // Sincroniza imediatamente após inicialização
-                setTimeout(syncCamerasToXeokit, 1000);
-                console.log("✅ Sincronização de câmera configurada.");
+            // ✅ CORREÇÃO: CONFIGURA SINCRONIZAÇÃO DE CÂMERA
+            if (viewer && viewer.context) {
+                // Aguarda um pouco antes de configurar a sincronização
+                setTimeout(() => {
+                    try {
+                        const scene = viewer.context.getScene();
+                        if (scene && scene.camera) {
+                            // Configura listener para mudanças de câmera
+                            const originalUpdate = scene.camera.updateProjectionMatrix;
+                            scene.camera.updateProjectionMatrix = function() {
+                                originalUpdate.call(this);
+                                syncCamerasToXeokit();
+                            };
+                            
+                            // Sincroniza inicialmente
+                            syncCamerasToXeokit();
+                            console.log("✅ Sincronização de câmera configurada.");
+                        }
+                    } catch (syncError) {
+                        console.warn("⚠️ Erro ao configurar sincronização:", syncError);
+                    }
+                }, 2000);
             }
 
         } catch (e) {
@@ -237,7 +272,6 @@ document.addEventListener('DOMContentLoaded', () => {
         isMeasuring = !isMeasuring;
         const button = document.getElementById('start-measurement');
         
-        // ✅ CORREÇÃO: Verificações mais robustas
         if (!xeokitViewer) {
             console.error("❌ xeokitViewer não inicializado.");
             isMeasuring = false;
@@ -250,29 +284,71 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // ✅ CORREÇÃO: Inicializa o controle APENAS na primeira vez com verificação
+        // ✅ CORREÇÃO CRÍTICA: TESTA DIFERENTES ABORDAGENS PARA O CONTROLE
         if (!distanceMeasurementsControl) {
             const xeokitSDK = window.xeokitSDK;
-            if (xeokitSDK && xeokitSDK.DistanceMeasurementsControl) {
-                try {
-                    // ✅ CORREÇÃO CRÍTICA: Passa o plugin correto e o viewer
-                    distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(xeokitViewer, {
-                        distanceMeasurementsPlugin: distanceMeasurements,
+            
+            try {
+                // ABORDAGEM 1: Tenta DistanceMeasurementsControl tradicional
+                if (xeokitSDK.DistanceMeasurementsControl) {
+                    console.log("🔄 Tentando DistanceMeasurementsControl...");
+                    distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements, {
                         pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
                             active: true,
                             zoomFactor: 2
                         })
                     });
                     console.log("✅ DistanceMeasurementsControl inicializado com sucesso.");
-                } catch (controlError) {
-                    console.error("❌ Erro ao criar DistanceMeasurementsControl:", controlError);
-                    isMeasuring = false;
-                    return;
                 }
-            } else {
-                console.error("❌ DistanceMeasurementsControl não disponível no SDK.");
-                isMeasuring = false;
-                return;
+                // ABORDAGEM 2: Tenta DistanceMeasurementsMouseControl (mais moderna)
+                else if (xeokitSDK.DistanceMeasurementsMouseControl) {
+                    console.log("🔄 Tentando DistanceMeasurementsMouseControl...");
+                    distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsMouseControl(distanceMeasurements, {
+                        pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
+                            active: true,
+                            zoomFactor: 2
+                        })
+                    });
+                    console.log("✅ DistanceMeasurementsMouseControl inicializado com sucesso.");
+                }
+                // ABORDAGEM 3: Tenta método direto no plugin
+                else {
+                    console.log("🔄 Usando controle direto do plugin...");
+                    distanceMeasurementsControl = {
+                        activate: () => {
+                            distanceMeasurements.activate();
+                            console.log("✅ Plugin ativado diretamente");
+                        },
+                        deactivate: () => {
+                            distanceMeasurements.deactivate();
+                            console.log("✅ Plugin desativado diretamente");
+                        }
+                    };
+                }
+                
+            } catch (controlError) {
+                console.error("❌ Erro ao criar controle de medições:", controlError);
+                
+                // ABORDAGEM 4: Fallback - usa o plugin diretamente
+                console.log("🔄 Usando fallback direto...");
+                distanceMeasurementsControl = {
+                    activate: () => {
+                        try {
+                            distanceMeasurements.activate();
+                            console.log("✅ Plugin ativado via fallback");
+                        } catch (e) {
+                            console.error("❌ Erro ao ativar plugin:", e);
+                        }
+                    },
+                    deactivate: () => {
+                        try {
+                            distanceMeasurements.deactivate();
+                            console.log("✅ Plugin desativado via fallback");
+                        } catch (e) {
+                            console.error("❌ Erro ao desativar plugin:", e);
+                        }
+                    }
+                };
             }
         }
 
@@ -285,11 +361,17 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.display = 'block';
             
             try {
-                // ✅ CORREÇÃO: Usa activate() corretamente
-                distanceMeasurementsControl.activate();
-                console.log("▶️ Modo de Medição ATIVADO.");
+                // Sincroniza a câmera antes de ativar
+                syncCamerasToXeokit();
                 
-                // Debug do estado
+                // Ativa o controle
+                if (distanceMeasurementsControl && distanceMeasurementsControl.activate) {
+                    distanceMeasurementsControl.activate();
+                    console.log("▶️ Modo de Medição ATIVADO.");
+                } else {
+                    console.error("❌ Método activate não disponível no controle");
+                }
+                
                 debugXeokitState();
             } catch (activateError) {
                 console.error("❌ Erro ao ativar medições:", activateError);
@@ -307,9 +389,11 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.display = 'none';
 
             try {
-                // ✅ CORREÇÃO: Usa deactivate() corretamente
-                distanceMeasurementsControl.deactivate();
-                console.log("⏸️ Modo de Medição DESATIVADO.");
+                // Desativa o controle
+                if (distanceMeasurementsControl && distanceMeasurementsControl.deactivate) {
+                    distanceMeasurementsControl.deactivate();
+                    console.log("⏸️ Modo de Medição DESATIVADO.");
+                }
             } catch (deactivateError) {
                 console.error("❌ Erro ao desativar medições:", deactivateError);
             }
@@ -324,7 +408,7 @@ document.addEventListener('DOMContentLoaded', () => {
     viewer = CreateViewer(container);
     
     // 2. Inicializa o Viewer (web-ifc-viewer)
-    viewer.IFC.setWasmPath('wasm/'); // Define o caminho para os arquivos .wasm
+    viewer.IFC.setWasmPath('wasm/');
     viewer.IFC.loader.ifcManager.applyWebIfcConfig({
         COORDINATE_TO_ORIGIN: true,
         USE_FAST_BOOLS: true
@@ -340,7 +424,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Listener de clique para Medição
     document.getElementById('start-measurement').addEventListener('click', () => {
-        // ✅ VERIFICAÇÃO ANTES DE TENTAR MEDIR
         if (!xeokitViewer) {
             console.error("❌ xeokitViewer não está disponível");
             alert("Sistema de medições não está disponível. Recarregue a página.");
@@ -388,12 +471,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.onkeydown = (event) => {
         if (event.code === 'Escape') {
-             // Se estiver no modo de medição, a primeira tecla ESC deve desativá-lo
             if (isMeasuring) {
                 toggleMeasurement();
                 return;
             }
-             // Se não estiver medindo, limpa a seleção
             if (viewer?.IFC?.selector) {
                 viewer.IFC.selector.unpickIfcItems();
                 viewer.IFC.selector.unHighlightIfcItems();
@@ -409,13 +490,10 @@ document.addEventListener('DOMContentLoaded', () => {
         input.addEventListener("change", async (changed) => {
             const file = changed.target.files[0];
             if (file) {
-                // Para arquivos locais, usamos a função de carregamento de arquivos nativa do web-ifc-viewer
-                // Não é necessário usar loadMultipleIfcs (que é otimizada para URLs)
                 try {
-                    const model = await viewer.IFC.loadIfc(file, true); // true para limpar modelos existentes
+                    const model = await viewer.IFC.loadIfc(file, true);
                     
                     if (model && model.modelID !== undefined) {
-                         // Limpa a lista de modelos existentes (já que loadIfc limpa o viewer)
                         loadedModels.clear(); 
                         loadedModels.set(model.modelID, {
                             visible: true,
@@ -424,13 +502,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         
                         console.log(`✅ Sucesso no carregamento local: ${file.name} (ID: ${model.modelID})`);
-                        // ✅ CORREÇÃO: Garante que o IFC Manager.get.spatialStructure existe antes de usá-lo
+                        
                         if (viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
                             await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
-                        } else {
-                             console.warn("⚠️ Não foi possível construir a estrutura espacial, IfcManager.get.spatialStructure não está pronto.");
                         }
-
+                        
                         updateVisibilityControls();
                         viewer.context.fitToFrame([model.modelID]);
                     }
@@ -438,7 +514,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error("❌ Erro ao carregar arquivo local IFC:", e);
                 }
                 document.getElementById('properties-panel').style.display = 'none';
-                // O objeto URL.createObjectURL não é necessário aqui
             }
         });
     }
@@ -449,23 +524,21 @@ document.addEventListener('DOMContentLoaded', () => {
 // FUNÇÕES AUXILIARES
 // ----------------------------------
 
-// 🔥 Carrega múltiplos arquivos IFC de URLs (VERSÃO CORRIGIDA)
+// 🔥 Carrega múltiplos arquivos IFC de URLs
 async function loadMultipleIfcs(urls) {
     console.log(`🔄 Iniciando carregamento de ${urls.length} modelo(s)...`);
     
-    // Limpa a lista antes de carregar novos modelos
     loadedModels.clear();
 
     const loadPromises = urls.map(async (url, index) => {
         console.log(`📦 Tentando carregar: ${url}`);
         try {
-            // Usar 'loadIfcUrl' para carregar strings de URL de assets estáticos.
-            const model = await viewer.IFC.loadIfcUrl(url, false); // false para NÃO limpar modelos existentes
+            const model = await viewer.IFC.loadIfcUrl(url, false);
             
             if (model && model.modelID !== undefined) {
                 loadedModels.set(model.modelID, {
                     visible: true,
-                    name: url.split('/').pop(), // Usa o nome do arquivo como nome
+                    name: url.split('/').pop(),
                     url: url
                 });
                 console.log(`✅ Sucesso no carregamento: ${url} (ID: ${model.modelID})`);
@@ -484,12 +557,9 @@ async function loadMultipleIfcs(urls) {
     if (loadedIDs.length > 0) {
         console.log(`🎉 ${loadedIDs.length}/${urls.length} modelo(s) carregados!`);
         
-        // ✅ CORREÇÃO: Aguarda um pouco para garantir que o IFC Manager esteja pronto
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // ✅ CORREÇÃO MELHOR: Usa a API correta do web-ifc-viewer para construir estrutura espacial
         try {
-            // Método 1: Tenta usar a API pública do viewer
             if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.getSpatialStructure === 'function') {
                 console.log("🔄 Construindo estrutura espacial via getSpatialStructure...");
                 for (const modelID of loadedIDs) {
@@ -497,7 +567,6 @@ async function loadMultipleIfcs(urls) {
                 }
                 console.log("✅ Estrutura espacial construída via getSpatialStructure.");
             }
-            // Método 2: Tenta método alternativo
             else if (viewer.IFC && viewer.IFC.loader.ifcManager.get && viewer.IFC.loader.ifcManager.get.spatialStructure) {
                 console.log("🔄 Construindo estrutura espacial via spatialStructure.build...");
                 const structurePromises = loadedIDs.map(id => 
@@ -506,31 +575,11 @@ async function loadMultipleIfcs(urls) {
                 await Promise.all(structurePromises);
                 console.log("✅ Estrutura espacial construída via spatialStructure.build.");
             }
-            // Método 3: Tenta método mais recente
-            else if (viewer.IFC && typeof viewer.IFC.loader.ifcManager.createSubset === 'function') {
-                console.log("🔄 Estrutura espacial será construída automaticamente pelo viewer...");
-                // O viewer moderno constrói automaticamente
-            }
-            else {
-                console.warn("⚠️ API de estrutura espacial não encontrada. Tentando método direto...");
-                // Método de fallback: tenta acessar diretamente
-                for (const modelID of loadedIDs) {
-                    try {
-                        await viewer.IFC.getSpatialStructure(modelID);
-                    } catch (e) {
-                        console.warn(`⚠️ Não foi possível construir estrutura para modelo ${modelID}:`, e.message);
-                    }
-                }
-            }
         } catch (error) {
             console.warn("⚠️ Estrutura espacial não pôde ser construída:", error.message);
-            console.log("💡 O visualizador funcionará, mas algumas funcionalidades podem estar limitadas.");
         }
 
-        // Ajusta a câmera para enquadrar todos os modelos
         viewer.context.fitToFrame(loadedIDs); 
-        
-        // Atualiza os controles de visibilidade
         updateVisibilityControls();
 
     } else {
@@ -550,14 +599,11 @@ function showProperties(props, id) {
     const propTable = document.createElement('table');
     propTable.className = 'properties-table';
 
-    // Propriedades Básicas
     if (props.GlobalId) addRow(propTable, 'GlobalId', props.GlobalId.value);
     if (props.Name) addRow(propTable, 'Name', props.Name.value);
     
-    // Adiciona uma linha de separação
     addHeader(propTable, 'Propriedades IFC');
     
-    // Outras Propriedades
     for (const key in props) {
         if (key !== 'expressID' && key !== 'type' && key !== 'GlobalId' && key !== 'Name' && key !== 'properties') {
             const prop = props[key];
@@ -566,7 +612,6 @@ function showProperties(props, id) {
         }
     }
     
-    // Propriedades do Pset (se existirem)
     if (props.properties) {
         addHeader(propTable, 'Conjuntos de Propriedades (Psets)', true);
         
@@ -592,7 +637,7 @@ function formatValue(prop) {
     if (prop.value !== undefined) {
         return prop.value;
     }
-    if (prop.map) { // Se for uma lista de valores
+    if (prop.map) {
         return `[${prop.map(p => formatValue(p)).join(', ')}]`;
     }
     return prop.toString();
