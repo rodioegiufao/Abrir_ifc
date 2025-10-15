@@ -63,12 +63,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // Verifica se o SDK foi carregado globalmente (no index.html)
             const xeokitSDK = window.xeokitSDK;
             if (!xeokitSDK || !xeokitSDK.Viewer) {
-                 console.error("❌ Erro ao inicializar xeokit viewer: xeokitSDK não está disponível globalmente. Verifique o import no index.html.");
-                 return;
+                console.error("❌ Erro ao inicializar xeokit viewer: xeokitSDK não está disponível globalmente. Verifique o import no index.html.");
+                return;
             }
 
-            // 1. Cria o container do xeokit (que vai sobrepor o web-ifc-viewer)
-            // ✅ CORREÇÃO 1: Garante que o container é buscado/criado corretamente no DOM.
+            // 1. Cria o container do xeokit
             xeokitContainer = document.getElementById('xeokit-container');
             if (!xeokitContainer) {
                 xeokitContainer = document.createElement('div');
@@ -80,58 +79,92 @@ document.addEventListener('DOMContentLoaded', () => {
                     width: 100%;
                     height: 100%;
                     z-index: 10;
-                    pointer-events: none; /* Inicia transparente e não interativo */
-                    display: none; /* Escondido por padrão */
+                    pointer-events: none;
+                    display: none;
                 `;
                 document.getElementById('viewer-container').appendChild(xeokitContainer);
                 console.log("✅ xeokit-container criado e anexado ao DOM.");
             }
 
-            // 2. Inicializa o xeokit Viewer
-            // Usando o elemento DOM correto para o Xeokit
+            // 2. ✅ CORREÇÃO CRÍTICA: Cria um canvas específico para o xeokit
+            let xeokitCanvas = document.getElementById('xeokit-canvas');
+            if (!xeokitCanvas) {
+                xeokitCanvas = document.createElement('canvas');
+                xeokitCanvas.id = 'xeokit-canvas';
+                xeokitCanvas.width = xeokitContainer.clientWidth;
+                xeokitCanvas.height = xeokitContainer.clientHeight;
+                xeokitCanvas.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    display: block;
+                `;
+                xeokitContainer.appendChild(xeokitCanvas);
+                console.log("✅ Canvas do xeokit criado.");
+            }
+
+            // 3. ✅ CORREÇÃO: Inicializa o xeokit Viewer com o canvas
             xeokitViewer = new xeokitSDK.Viewer({
-                container: xeokitContainer, 
+                canvasId: "xeokit-canvas", // ✅ Agora passando o ID do canvas
                 transparent: true,
-                saoEnabled: true,
-                edgeThreshold: 5
+                alpha: true,
+                premultipliedAlpha: false,
+                preserveDrawingBuffer: false,
+                antialias: true
             });
-            
-            // 3. Inicializa o plugin de Medição
+
+            console.log("✅ xeokit viewer inicializado com sucesso.");
+
+            // 4. Inicializa o plugin de Medição
             distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
-                snapper: new xeokitSDK.DistanceMeasurementSnapper(), // Habilita o Snapper
+                // snapper: new xeokitSDK.DistanceMeasurementSnapper(), // Comente se não existir
                 fontColor: "white",
                 labelBackgroundColor: "rgba(0, 0, 0, 0.5)",
                 lineColor: "red"
             });
 
-            console.log("✅ xeokit viewer inicializado. Plugins prontos.");
+            console.log("✅ Plugin de medições inicializado.");
 
-            // Adiciona listener para sincronização de câmera
-            viewer.context.ifcCamera.controls.addEventListener("change", () => {
-                syncCameras(viewer.context.ifcCamera.activeCamera, viewer.context.ifcCamera.controls, xeokitViewer);
-            });
+            // 5. Configura sincronização de câmera
+            if (viewer && viewer.context && viewer.context.ifcCamera) {
+                viewer.context.ifcCamera.controls.addEventListener("change", () => {
+                    syncCameras(
+                        viewer.context.ifcCamera.activeCamera, 
+                        viewer.context.ifcCamera.controls, 
+                        xeokitViewer
+                    );
+                });
+                console.log("✅ Sincronização de câmera configurada.");
+            }
 
         } catch (e) {
-            console.error("❌ Erro catastrófico ao inicializar xeokit viewer:", e);
+            console.error("❌ Erro ao inicializar xeokit viewer:", e);
         }
     }
 
 
-    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO
+    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (CORRIGIDA)
     function toggleMeasurement() {
         isMeasuring = !isMeasuring;
         const button = document.getElementById('start-measurement');
         
-        // Inicializa o controle APENAS na primeira chamada
-        if (!distanceMeasurementsControl && distanceMeasurements) {
-            const xeokitSDK = window.xeokitSDK;
-            distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements);
-            console.log("✅ DistanceMeasurementsControl inicializado sob demanda.");
+        // ✅ CORREÇÃO: Verifica se o xeokit foi inicializado corretamente
+        if (!xeokitViewer || !distanceMeasurements) {
+            console.error("❌ xeokit não inicializado corretamente.");
+            isMeasuring = false;
+            return;
         }
 
+        // ✅ CORREÇÃO: Inicializa o controle APENAS na primeira vez
         if (!distanceMeasurementsControl) {
-            console.error("❌ DistanceMeasurementsControl não está disponível.");
-            return;
+            const xeokitSDK = window.xeokitSDK;
+            if (xeokitSDK && xeokitSDK.DistanceMeasurementsControl) {
+                distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements);
+                console.log("✅ DistanceMeasurementsControl inicializado.");
+            } else {
+                console.error("❌ DistanceMeasurementsControl não disponível no SDK.");
+                isMeasuring = false;
+                return;
+            }
         }
 
         if (isMeasuring) {
@@ -143,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.display = 'block';
             
             // Ativa o controle
-            distanceMeasurementsControl.setActive(true);
+            distanceMeasurementsControl.activate(); // ✅ Mudei de setActive() para activate()
             
             console.log("▶️ Modo de Medição ATIVADO.");
 
@@ -156,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.display = 'none';
 
             // Desativa o controle
-            distanceMeasurementsControl.setActive(false);
+            distanceMeasurementsControl.deactivate(); // ✅ Mudei de setActive() para deactivate()
             
             console.log("⏸️ Modo de Medição DESATIVADO.");
         }
