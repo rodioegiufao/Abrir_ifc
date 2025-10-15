@@ -2,7 +2,6 @@ import { Color } from 'three';
 import { IfcViewerAPI } from 'web-ifc-viewer';
 
 let viewer;
-let currentModelID = -1;
 let lastProps = null;
 
 // 🔥 VARIÁVEIS PARA MEDIÇÕES
@@ -48,12 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
         xeokitViewer.camera.look = [threeTarget.x, threeTarget.y, threeTarget.z];
         xeokitViewer.camera.up = [0, 0, 1]; // Assume que o Up-axis do IFC é Z
         
-        // 2. Sincroniza projeção (se Three.js for Perspective)
+        // 2. Sincroniza projeção
         if (threeJSCamera.isPerspectiveCamera) {
             xeokitViewer.camera.projection = "perspective";
-            // É mais difícil sincronizar FOV e Zoom perfeitamente, mas a posição já ajuda muito
         } else {
-             // Se for Orthographic, você teria que calcular a dimensão da caixa de projeção
              xeokitViewer.camera.projection = "perspective";
         }
     };
@@ -63,24 +60,34 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
             
-            // Cria o container do xeokit (ele ficará POR CIMA do THREE.js)
+            // CORREÇÃO ESSENCIAL: Cria o wrapper DIV e o elemento CANVAS para o xeokit
             xeokitContainer = document.createElement('div');
-            xeokitContainer.id = 'xeokit-container';
+            xeokitContainer.id = 'xeokit-wrapper';
             xeokitContainer.style.position = 'absolute';
             xeokitContainer.style.top = '0';
             xeokitContainer.style.left = '0';
             xeokitContainer.style.width = '100%';
             xeokitContainer.style.height = '100%';
-            xeokitContainer.style.pointerEvents = 'none'; // Importante para permitir cliques no IFC.js
+            xeokitContainer.style.pointerEvents = 'none'; // Importante para permitir cliques no IFC.js por padrão
             container.appendChild(xeokitContainer);
+            
+            // Cria o CANVAS real que o xeokit precisa
+            const xeokitCanvas = document.createElement('canvas');
+            const canvasId = 'xeokit-canvas';
+            xeokitCanvas.id = canvasId;
+            xeokitCanvas.style.width = '100%';
+            xeokitCanvas.style.height = '100%';
+            xeokitContainer.appendChild(xeokitCanvas);
+
 
             // Importa o xeokit (disponível globalmente devido ao index.html)
             const { Viewer, DistanceMeasurementsPlugin, DistanceMeasurement } = window.xeokitSDK;
 
+            // O construtor agora recebe o ID do CANVAS
             xeokitViewer = new Viewer({
-                canvasId: xeokitContainer.id,
-                transparent: true, // Garante que o IFC.js de baixo seja visível
-                backgroundColor: [0, 0, 0, 0], // Fundo transparente
+                canvasId: canvasId, 
+                transparent: true, 
+                backgroundColor: [0, 0, 0, 0], 
                 sao: false,
                 pbr: false
             });
@@ -96,7 +103,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Adiciona listener de sincronização da câmera (Three.js -> xeokit)
             viewer.context.renderer.onBeforeRender = () => {
-                syncCameras(viewer.context.camera, viewer.context.ifcCamera.getCameraControls(), xeokitViewer);
+                // Checa se os controles da câmera estão prontos antes de tentar acessá-los
+                const orbitControls = viewer.context.ifcCamera.getCameraControls();
+                if (orbitControls) {
+                    syncCameras(viewer.context.camera, orbitControls, xeokitViewer);
+                }
             };
 
         } catch (e) {
@@ -160,11 +171,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         title.textContent = props.type ? `${props.type} (ID: ${id})` : `Elemento IFC (ID: ${id})`;
-        details.innerHTML = ''; // Limpa o conteúdo anterior
+        details.innerHTML = ''; 
 
         const formatValue = (value) => {
             if (typeof value === 'object' && value !== null && value.value) {
-                return formatValue(value.value); // Desembrulha o IfcValue
+                return formatValue(value.value); 
             }
             if (typeof value === 'object' && value !== null) {
                 return `<pre>${JSON.stringify(value, null, 2)}</pre>`;
@@ -206,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (VOLTOU AO XEOKIT)
+    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO
     function toggleMeasurement() {
         const btn = document.getElementById('start-measurement');
 
@@ -300,6 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Carrega os modelos IFC iniciais e inicializa o xeokit
     loadMultipleIfcs(IFC_MODELS_TO_LOAD);
+    // Chama o inicializador do xeokit APÓS o THREE.js para que ele se sobreponha
     initializeXeokitViewer();
 
     console.log("🎉 Aplicação inicializada com sucesso!");
