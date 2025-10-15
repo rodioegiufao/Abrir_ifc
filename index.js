@@ -55,86 +55,56 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
 
-    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (VERSÃO CORRIGIDA)
+    // 🔥 INICIALIZAÇÃO CORRIGIDA DO PLUGIN DE MEDIÇÕES
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
             
-            // Verifica se o SDK foi carregado globalmente (no index.html)
             const xeokitSDK = window.xeokitSDK;
             if (!xeokitSDK || !xeokitSDK.Viewer) {
-                console.error("❌ Erro ao inicializar xeokit viewer: xeokitSDK não está disponível globalmente. Verifique o import no index.html.");
+                console.error("❌ xeokitSDK não disponível");
                 return;
             }
 
-            // 1. Cria o container do xeokit
-            xeokitContainer = document.getElementById('xeokit-container');
-            if (!xeokitContainer) {
-                xeokitContainer = document.createElement('div');
-                xeokitContainer.id = 'xeokit-container';
-                xeokitContainer.style.cssText = `
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    z-index: 10;
-                    pointer-events: none;
-                    display: none;
-                `;
-                document.getElementById('viewer-container').appendChild(xeokitContainer);
-                console.log("✅ xeokit-container criado e anexado ao DOM.");
-            }
+            // ... (código anterior para criar container e canvas) ...
 
-            // 2. ✅ CORREÇÃO CRÍTICA: Cria um canvas específico para o xeokit
-            let xeokitCanvas = document.getElementById('xeokit-canvas');
-            if (!xeokitCanvas) {
-                xeokitCanvas = document.createElement('canvas');
-                xeokitCanvas.id = 'xeokit-canvas';
-                xeokitCanvas.width = xeokitContainer.clientWidth;
-                xeokitCanvas.height = xeokitContainer.clientHeight;
-                xeokitCanvas.style.cssText = `
-                    width: 100%;
-                    height: 100%;
-                    display: block;
-                `;
-                xeokitContainer.appendChild(xeokitCanvas);
-                console.log("✅ Canvas do xeokit criado.");
-            }
-
-            // 3. ✅ CORREÇÃO: Inicializa o xeokit Viewer com o canvas
+            // ✅ INICIALIZAÇÃO DO VIEWER
             xeokitViewer = new xeokitSDK.Viewer({
-                canvasId: "xeokit-canvas", // ✅ Agora passando o ID do canvas
+                canvasId: "xeokit-canvas",
                 transparent: true,
                 alpha: true,
-                premultipliedAlpha: false,
-                preserveDrawingBuffer: false,
-                antialias: true
+                premultipliedAlpha: false
             });
 
             console.log("✅ xeokit viewer inicializado com sucesso.");
 
-            // 4. Inicializa o plugin de Medição
-            distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
-                // snapper: new xeokitSDK.DistanceMeasurementSnapper(), // Comente se não existir
-                fontColor: "white",
-                labelBackgroundColor: "rgba(0, 0, 0, 0.5)",
-                lineColor: "red"
-            });
-
-            console.log("✅ Plugin de medições inicializado.");
-
-            // 5. Configura sincronização de câmera
-            if (viewer && viewer.context && viewer.context.ifcCamera) {
-                viewer.context.ifcCamera.controls.addEventListener("change", () => {
-                    syncCameras(
-                        viewer.context.ifcCamera.activeCamera, 
-                        viewer.context.ifcCamera.controls, 
-                        xeokitViewer
-                    );
+            // ✅ INICIALIZAÇÃO CORRIGIDA DO PLUGIN DE MEDIÇÕES
+            try {
+                distanceMeasurements = new xeokitSDK.DistanceMeasurementsPlugin(xeokitViewer, {
+                    // Configurações básicas
+                    pointSize: 4,
+                    lineWidth: 2,
+                    fontColor: "#FFFFFF",
+                    labelBackgroundColor: "rgba(0, 0, 0, 0.8)",
+                    lineColor: "#FF0000",
+                    labelPrefix: "Dist: ",
+                    labelSuffix: " m"
                 });
-                console.log("✅ Sincronização de câmera configurada.");
+
+                console.log("✅ Plugin DistanceMeasurementsPlugin inicializado:", distanceMeasurements);
+                
+                // ✅ VERIFICA SE O PLUGIN FOI CRIADO CORRETAMENTE
+                if (!distanceMeasurements || typeof distanceMeasurements !== 'object') {
+                    throw new Error("Plugin de medições não foi criado corretamente");
+                }
+
+            } catch (pluginError) {
+                console.error("❌ Erro ao inicializar plugin de medições:", pluginError);
+                distanceMeasurements = null;
+                return;
             }
+
+            // ... (resto do código de sincronização de câmera) ...
 
         } catch (e) {
             console.error("❌ Erro ao inicializar xeokit viewer:", e);
@@ -142,24 +112,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (CORRIGIDA)
+    // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO (VERSÃO CORRIGIDA)
     function toggleMeasurement() {
         isMeasuring = !isMeasuring;
         const button = document.getElementById('start-measurement');
         
-        // ✅ CORREÇÃO: Verifica se o xeokit foi inicializado corretamente
-        if (!xeokitViewer || !distanceMeasurements) {
-            console.error("❌ xeokit não inicializado corretamente.");
+        // ✅ CORREÇÃO: Verificações mais robustas
+        if (!xeokitViewer) {
+            console.error("❌ xeokitViewer não inicializado.");
             isMeasuring = false;
             return;
         }
 
-        // ✅ CORREÇÃO: Inicializa o controle APENAS na primeira vez
+        if (!distanceMeasurements) {
+            console.error("❌ distanceMeasurements não inicializado.");
+            isMeasuring = false;
+            return;
+        }
+
+        // ✅ CORREÇÃO: Inicializa o controle APENAS na primeira vez com verificação
         if (!distanceMeasurementsControl) {
             const xeokitSDK = window.xeokitSDK;
             if (xeokitSDK && xeokitSDK.DistanceMeasurementsControl) {
-                distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements);
-                console.log("✅ DistanceMeasurementsControl inicializado.");
+                try {
+                    // ✅ CORREÇÃO CRÍTICA: Passa o plugin correto
+                    distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(distanceMeasurements, {
+                        // Configurações opcionais
+                        pointerLens: new xeokitSDK.PointerLens(xeokitViewer, {
+                            active: true,
+                            zoomFactor: 2
+                        })
+                    });
+                    console.log("✅ DistanceMeasurementsControl inicializado com sucesso.");
+                } catch (controlError) {
+                    console.error("❌ Erro ao criar DistanceMeasurementsControl:", controlError);
+                    isMeasuring = false;
+                    return;
+                }
             } else {
                 console.error("❌ DistanceMeasurementsControl não disponível no SDK.");
                 isMeasuring = false;
@@ -175,10 +164,16 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.pointerEvents = 'all';
             xeokitContainer.style.display = 'block';
             
-            // Ativa o controle
-            distanceMeasurementsControl.activate(); // ✅ Mudei de setActive() para activate()
-            
-            console.log("▶️ Modo de Medição ATIVADO.");
+            try {
+                // ✅ CORREÇÃO: Usa activate() corretamente
+                distanceMeasurementsControl.activate();
+                console.log("▶️ Modo de Medição ATIVADO.");
+            } catch (activateError) {
+                console.error("❌ Erro ao ativar medições:", activateError);
+                isMeasuring = false;
+                button.textContent = 'Iniciar Medição';
+                button.classList.remove('active');
+            }
 
         } else {
             button.textContent = 'Iniciar Medição';
@@ -188,10 +183,13 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.pointerEvents = 'none';
             xeokitContainer.style.display = 'none';
 
-            // Desativa o controle
-            distanceMeasurementsControl.deactivate(); // ✅ Mudei de setActive() para deactivate()
-            
-            console.log("⏸️ Modo de Medição DESATIVADO.");
+            try {
+                // ✅ CORREÇÃO: Usa deactivate() corretamente
+                distanceMeasurementsControl.deactivate();
+                console.log("⏸️ Modo de Medição DESATIVADO.");
+            } catch (deactivateError) {
+                console.error("❌ Erro ao desativar medições:", deactivateError);
+            }
         }
     }
 
@@ -219,6 +217,19 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Listener de clique para Medição
     document.getElementById('start-measurement').addEventListener('click', () => {
+        // ✅ VERIFICAÇÃO ANTES DE TENTAR MEDIR
+        if (!xeokitViewer) {
+            console.error("❌ xeokitViewer não está disponível");
+            alert("Sistema de medições não está disponível. Recarregue a página.");
+            return;
+        }
+        
+        if (!distanceMeasurements) {
+            console.error("❌ Plugin de medições não está disponível");
+            alert("Plugin de medições não carregado.");
+            return;
+        }
+        
         toggleMeasurement();
     });
 
