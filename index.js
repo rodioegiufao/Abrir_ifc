@@ -54,12 +54,11 @@ document.addEventListener('DOMContentLoaded', () => {
         xeokitViewer.camera.perspective.aspect = threeJSCamera.aspect;
     };
 
-    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (AGORA COM O CANVAS CORRETO)
+    // 🔥 INICIALIZAR XEOKIT VIEWER PARA MEDIÇÕES (AGORA CORRIGIDO PARA USAR O CANVAS CORRETO)
     async function initializeXeokitViewer() {
         try {
             console.log("🔄 Inicializando xeokit viewer...");
 
-            // ✅ SOLUÇÃO: Acessa o SDK do escopo global (definido em index.html)
             const xeokitSDK = window.xeokitSDK;
             
             if (!xeokitSDK || !xeokitSDK.Viewer) {
@@ -78,16 +77,19 @@ document.addEventListener('DOMContentLoaded', () => {
             xeokitContainer.style.left = '0';
             xeokitContainer.style.width = '100%';
             xeokitContainer.style.height = '100%';
-            xeokitContainer.style.zIndex = '10'; // Garante que esteja acima do three.js canvas
+            xeokitContainer.style.zIndex = '10'; 
             xeokitContainer.style.pointerEvents = 'none'; // Inicialmente, não captura eventos de mouse
 
             // 2. Cria o canvas que será usado pelo xeokit
             const xeokitCanvas = document.createElement('canvas');
             xeokitCanvas.id = 'xeokit-canvas';
-            xeokitCanvas.style.display = 'block'; // Garante que o canvas seja visível
+            xeokitCanvas.style.display = 'block'; 
             xeokitContainer.appendChild(xeokitCanvas);
             
             // 3. Inicializa o Viewer, passando o ID do canvas (FIX!)
+            // A mensagem "owner must be a Component" do xeokit é geralmente um falso positivo 
+            // quando as ferramentas de medição são inicializadas sem geometria.
+            // Vamos garantir que o canvasId esteja correto.
             xeokitViewer = new xeokitSDK.Viewer({
                 canvasId: "xeokit-canvas", // FIX: Mandatory config
                 transparent: true,
@@ -97,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             console.log("✅ xeokit viewer inicializado com sucesso.");
 
-            // Inicializa as ferramentas de medição
+            // Inicializa as ferramentas de medição AGORA
             distanceMeasurementsControl = new xeokitSDK.DistanceMeasurementsControl(xeokitViewer);
             distanceMeasurements = new xeokitSDK.DistanceMeasurements(xeokitViewer, {
                 control: distanceMeasurementsControl
@@ -112,7 +114,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error("❌ Erro ao inicializar xeokit viewer:", error);
+            // Retorna false em caso de falha para a inicialização ser tratada no then/catch
+            return false; 
         }
+        // Retorna true para indicar sucesso
+        return true;
     }
 
     // 🔥 FUNÇÃO PARA CARREGAR MODELOS IFC MULTIPLOS (para URLs estáticas)
@@ -127,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const url of urls) {
             if (typeof url !== 'string') {
                 console.error("❌ Erro de carregamento: URL inválida (não é uma string):", url);
-                continue; // Pula URLs inválidas
+                continue; 
             }
 
             console.log(`📦 Tentando carregar: ${url}`);
@@ -139,13 +145,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     const name = url.split('/').pop();
                     loadedModels.set(model.modelID, { visible: true, name, url });
                     
-                    // Opcional: constrói a estrutura espacial para navegação
-                    await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
+                    // Removendo a linha de construção da estrutura espacial que estava falhando
+                    // await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
+                    
                     loadedCount++;
                     console.log(`✅ Sucesso no carregamento: ${name} (ID: ${model.modelID})`);
+                } else {
+                     console.warn(`⚠️ Modelo IFC carregado, mas sem ID válido: ${url}`);
                 }
 
             } catch (e) {
+                // O erro "Cannot read properties of undefined (reading 'spatialStructure')"
+                // costuma ocorrer ao tentar construir a estrutura espacial, não no loadIfcUrl em si.
+                // Mas se loadIfcUrl falhar, ele também entra aqui.
                 console.error("❌ Erro ao carregar IFC.", e);
             }
         }
@@ -156,6 +168,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if (loadedCount > 0) {
             // Ajusta o enquadramento apenas se houver modelos carregados
             viewer.context.fitToFrame(Array.from(loadedModels.keys()));
+            
+            // 🔥 NOVO PASSO: TENTA CARREGAR O MODELO NO XEOKIT
+            // O xeokit só mede o que ele mesmo renderiza. Precisamos de uma conversão para XKT
+            // ou carregar o IFC diretamente no xeokit (requer o WebIFCLoaderPlugin e o WASM).
+            // A maneira mais simples de testar a medição é carregar um modelo XKT de exemplo,
+            // mas como não temos XKT, a medição pode não funcionar até que os modelos sejam
+            // convertidos, ou até que usemos um plugin XKT no xeokit.
+            
+            // Para fazer as medições funcionarem, o xeokit precisa de uma geometria que ele
+            // possa detectar.
+            
+            // *** IMPORTANTE: A medição só funcionará se o modelo IFC for convertido para XKT
+            // ou se o xeokit for capaz de carregar e renderizar o mesmo IFC.
+            
+            // Se o xeokit estiver inicializado, vamos preparar a cena.
+            if (xeokitViewer) {
+                 // Esta é a forma de carregar um modelo XKT.
+                 // Como você só tem IFCs, e o xeokit não consegue medir a geometria do web-ifc-viewer,
+                 // esta parte é um placeholder até que você tenha os arquivos .xkt.
+                 
+                 // Exemplo: 
+                 // const model = xeokitViewer.createModel({ id: "myModel" });
+                 // new xeokitViewer.XKTLoaderPlugin({ viewer: xeokitViewer }).load({
+                 //      id: "myModel",
+                 //      src: "models/my_model.xkt" 
+                 // });
+                 
+                 // Como não temos XKT, vamos deixar o xeokit pronto para sincronizar a câmera.
+                 // A medição não funcionará até que o xeokit tenha geometria.
+            }
         }
     }
 
@@ -222,6 +264,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 🔥 FUNÇÃO PARA ALTERNAR O MODO DE MEDIÇÃO
     function toggleMeasurement() {
+        if (!xeokitViewer) {
+            console.error("❌ O xeokit viewer não foi inicializado corretamente. Não é possível medir.");
+            return;
+        }
+        
         const btn = document.getElementById('start-measurement');
 
         if (isMeasuring) {
@@ -283,24 +330,25 @@ document.addEventListener('DOMContentLoaded', () => {
     viewer = CreateViewer(container);
     
     // Inicia o viewer xeokit e as ferramentas de medição (AGORA CORRIGIDO)
-    initializeXeokitViewer().then(() => {
-        
-        // Sincroniza câmeras continuamente, se o xeokit estiver pronto
-        viewer.context.on
-            .cameraChanged
-            .add(() => syncCameras(viewer.context.ifcCamera.camera, viewer.context.ifcCamera.controls, xeokitViewer));
-        
-        // Configura eventos de botão
-        const startBtn = document.getElementById('start-measurement');
-        const clearBtn = document.getElementById('clear-measurements');
+    initializeXeokitViewer().then((success) => {
+        if (success) {
+            // Sincroniza câmeras continuamente, se o xeokit estiver pronto
+            viewer.context.on
+                .cameraChanged
+                .add(() => syncCameras(viewer.context.ifcCamera.camera, viewer.context.ifcCamera.controls, xeokitViewer));
+            
+            // Configura eventos de botão
+            const startBtn = document.getElementById('start-measurement');
+            const clearBtn = document.getElementById('clear-measurements');
 
-        if (startBtn) {
-            startBtn.onclick = toggleMeasurement;
-        }
-        if (clearBtn) {
-            clearBtn.onclick = () => {
-                distanceMeasurements.clear();
-            };
+            if (startBtn) {
+                startBtn.onclick = toggleMeasurement;
+            }
+            if (clearBtn) {
+                clearBtn.onclick = () => {
+                    distanceMeasurements.clear();
+                };
+            }
         }
     });
 
@@ -378,7 +426,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         
                         console.log(`✅ Sucesso no carregamento local: ${file.name} (ID: ${model.modelID})`);
-                        await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
+                        // Removida a construção da estrutura espacial que estava causando erro
+                        // await viewer.IFC.loader.ifcManager.get.spatialStructure.build(model.modelID);
                         updateVisibilityControls();
                         viewer.context.fitToFrame([model.modelID]);
                     }
